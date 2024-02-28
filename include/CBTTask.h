@@ -11,6 +11,8 @@
 #pragma once
 
 #include "sdkconfig.h"
+#ifdef CONFIG_BT_NIMBLE_ENABLED
+
 #include "CBaseTask.h"
 
 #include "host/ble_hs.h"
@@ -220,3 +222,4 @@ public:
 	*/
 	bool sendData(uint8_t *data, size_t size, TickType_t xTicksToWait = portMAX_DELAY);
 };
+#endif

@@ -8,8 +8,10 @@
     Один объект на приложение.
 */
 
-#include "CTrace.h"
 #include "CBTTask.h"
+
+#ifdef CONFIG_BT_NIMBLE_ENABLED
+#include "CTrace.h"
 
 #include "nimble/ble.h"
 #include "nimble/nimble_port.h"
@@ -604,4 +606,6 @@ bool CBTTask::sendData2(uint8_t *data, size_t size, uint16_t index, TickType_t x
     dt[1] = (uint8_t)(index >> 8);
     return sendMessage(&msg, xTicksToWait, true);
 }
+#endif
+
 #endif
