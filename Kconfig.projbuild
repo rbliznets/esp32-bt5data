@@ -1,0 +1,34 @@
+menu "BLE Data (NimBLE)"
+    depends on BT_NIMBLE_ENABLED
+
+    config BLE_DATA_DEVICE_NAME
+        string "Device name"
+        default "BLE Data"
+        help
+            Device name
+
+    choice
+        prompt "Choose core for the BLE Data task"
+        default DEBUG_TRACE_TASK0
+
+        config BLE_DATA_TASK0
+            bool "core 0"
+
+        config BLE_DATA_TASK1
+            bool "core 1"
+
+    endchoice
+
+    config BLE_DATA_SECOND_CHANNEL
+        bool "Second channel enabled"
+        default y
+        help
+            Speed up data stream.
+
+    config BLE_DATA_IBEACON
+        bool "iBeacon enabled"
+        default n
+        help
+            iBeacon code included.
+                
+endmenu
