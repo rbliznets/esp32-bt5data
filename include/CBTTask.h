@@ -27,7 +27,8 @@
 
 #define MSG_END_TASK (0) ///< Команда завершения задачи.
 #ifdef CONFIG_BLE_DATA_IBEACON
-#define MSG_INIT_BEACON (1) ///< Команда инициализации режима iBeacon.
+#define MSG_INIT_BEACON_TX (10) ///< Команда инициализации режима iBeacon.
+#define MSG_INIT_BEACON_RX (11) ///< Команда инициализации режима iBeacon.
 #endif
 #define MSG_INIT_DATA (2)  ///< Команда инициализации режима потоковых каналов.
 #define MSG_OFF (3)		   ///< Команда отключения BT.
@@ -56,7 +57,8 @@ enum class EBTMode
 {
 	Off, ///< Выключено.
 #ifdef CONFIG_BLE_DATA_IBEACON
-	iBeacon, ///< iBeacon.
+	iBeaconTx, ///< iBeacon.
+	iBeaconRx, ///< iBeacon.
 #endif
 	Data ///< Обмен данными.
 };
@@ -67,6 +69,7 @@ enum class EBTMode
  * \param[in] size размер данных.
  */
 typedef void onBLEDataRx(uint8_t *data, size_t size);
+typedef void onBeaconRx(uint8_t *id, uint16_t major, uint16_t minor, int8_t power, int8_t rssi);
 
 /// Класс логики работы канала данных по BLE.
 class CBTTask : public CBaseTask
@@ -109,6 +112,12 @@ protected:
 	uint16_t mBeaconMajor = 0; ///< Поле Major. Задается при инициализации режима.
 	uint16_t mBeaconMinor = 0; ///< Поле Minor. Задается при инициализации режима.
 	uint8_t mBeaconTx = 0;	   ///< Поле мощности на 1м. Берется из nvs "btx" (u8).
+
+	onBeaconRx *mOnBeacon = nullptr; ///< Callback функция события приема данных от маяка.
+
+	static void ble_on_sync_rx();
+	static void ble_scan();
+	static int ble_rx_gap_event(struct ble_gap_event *event, void *arg);
 
 	/// Stack sync callback (iBeacon).
 	static void ble_on_sync_beacon();
@@ -178,7 +187,11 @@ public:
 	*/
 	inline bool setBeacon(uint16_t major, uint16_t minor)
 	{
-		return sendCmd(MSG_INIT_BEACON, major, minor);
+		return sendCmd(MSG_INIT_BEACON_TX, major, minor);
+	};
+	inline bool setBeacon(onBeaconRx *onBeacon)
+	{
+		return sendCmd(MSG_INIT_BEACON_RX, 0, (uint32_t)onBeacon);
 	};
 #endif
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL

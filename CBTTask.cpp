@@ -167,6 +167,117 @@ void CBTTask::ble_on_reset(int reason)
 }
 
 #ifdef CONFIG_BLE_DATA_IBEACON
+void CBTTask::ble_on_sync_rx()
+{
+    ESP_LOGI(TAG, "BLE rx");
+    int rc;
+
+    /* Make sure we have proper identity address set (public preferred) */
+    rc = ble_hs_util_ensure_addr(0);
+    assert(rc == 0);
+
+    /* Begin scanning for a peripheral to connect to. */
+    ble_scan();
+}
+
+void CBTTask::ble_scan()
+{
+    uint8_t own_addr_type;
+    struct ble_gap_disc_params disc_params;
+    int rc;
+
+    /* Figure out address to use while advertising (no privacy for now) */
+    rc = ble_hs_id_infer_auto(0, &own_addr_type);
+    if (rc != 0)
+    {
+        MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
+        return;
+    }
+
+    /* Tell the controller to filter duplicates; we don't want to process
+     * repeated advertisements from the same device.
+     */
+    disc_params.filter_duplicates = 1;
+
+    /**
+     * Perform a passive scan.  I.e., don't send follow-up scan requests to
+     * each advertiser.
+     */
+    disc_params.passive = 1;
+
+    /* Use defaults for the rest of the parameters. */
+    disc_params.itvl = 0;
+    disc_params.window = 0;
+    disc_params.filter_policy = 0;
+    disc_params.limited = 0;
+
+    rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params,
+                      ble_rx_gap_event, NULL);
+    if (rc != 0)
+    {
+        MODLOG_DFLT(ERROR, "Error initiating GAP discovery procedure; rc=%d\n",
+                    rc);
+    }
+}
+
+/**
+ * The nimble host executes this callback when a GAP event occurs.  The
+ * application associates a GAP event callback with each connection that is
+ * established.  ble_cts_cent uses the same callback for all connections.
+ *
+ * @param event                 The event being signalled.
+ * @param arg                   Application-specified argument; unused by
+ *                                  ble_cts_cent.
+ *
+ * @return                      0 if the application successfully handled the
+ *                                  event; nonzero on failure.  The semantics
+ *                                  of the return code is specific to the
+ *                                  particular GAP event being signalled.
+ */
+int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
+{
+    struct ble_gap_conn_desc desc;
+    struct ble_hs_adv_fields fields;
+    int rc;
+
+    switch (event->type)
+    {
+    case BLE_GAP_EVENT_DISC:
+        if (event->disc.event_type == BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND)
+        {
+            rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
+                                         event->disc.length_data);
+            if (rc != 0)
+            {
+                return 0;
+            }
+            // MODLOG_DFLT(INFO, "DISC %d (%d)", event->disc.event_type, event->disc.rssi);
+            if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
+            {
+                TRACEDATA("bt", (uint8_t *)fields.mfg_data, fields.mfg_data_len);
+            }
+        }
+        return 0;
+
+    case BLE_GAP_EVENT_DISC_COMPLETE:
+        MODLOG_DFLT(INFO, "discovery complete; reason=%d\n",
+                    event->disc_complete.reason);
+        return 0;
+
+#if CONFIG_EXAMPLE_EXTENDED_ADV
+    case BLE_GAP_EVENT_EXT_DISC:
+        /* An advertisment report was received during GAP discovery. */
+        ext_print_adv_report(&event->disc);
+
+        ble_cts_cent_connect_if_interesting(&event->disc);
+        return 0;
+#endif
+
+    default:
+        return 0;
+    }
+}
+
 void CBTTask::ble_on_sync_beacon()
 {
     ESP_LOGI(TAG, "BLE sync beacon");
@@ -182,14 +293,14 @@ void CBTTask::ble_app_set_addr()
     int rc;
 
     rc = ble_hs_id_gen_rnd(1, &addr);
-    if(rc != 0)
+    if (rc != 0)
     {
         ESP_LOGE(TAG, "error ble_hs_id_gen_rnd; rc=%d", rc);
         return;
     }
 
     rc = ble_hs_id_set_rnd(addr.val);
-    if(rc != 0)
+    if (rc != 0)
     {
         ESP_LOGE(TAG, "error ble_app_set_addr; rc=%d", rc);
         return;
@@ -202,7 +313,7 @@ void CBTTask::ble_advertise_beacon()
     int rc;
 
     rc = ble_ibeacon_set_adv_data(CBTTask::Instance()->mBeaconID, CBTTask::Instance()->mBeaconMajor, CBTTask::Instance()->mBeaconMinor, CBTTask::Instance()->mBeaconTx);
-    if(rc != 0)
+    if (rc != 0)
     {
         ESP_LOGE(TAG, "error setting advertisement iBeacon; rc=%d", rc);
         return;
@@ -212,7 +323,7 @@ void CBTTask::ble_advertise_beacon()
     adv_params = (struct ble_gap_adv_params){0};
     rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, nullptr, BLE_HS_FOREVER,
                            &adv_params, nullptr, nullptr);
-    if(rc == 0)
+    if (rc == 0)
         ESP_LOGI(TAG, "iBeacon advertisement started");
     else
         ESP_LOGE(TAG, "error setting advertisement iBeacon; rc=%d", rc);
@@ -409,8 +520,11 @@ EBTMode CBTTask::init_bt(EBTMode mode)
     switch (mode)
     {
 #ifdef CONFIG_BLE_DATA_IBEACON
-    case EBTMode::iBeacon:
+    case EBTMode::iBeaconTx:
         ble_hs_cfg.sync_cb = ble_on_sync_beacon;
+        break;
+    case EBTMode::iBeaconRx:
+        ble_hs_cfg.sync_cb = ble_on_sync_rx;
         break;
 #endif
     case EBTMode::Data:
@@ -491,11 +605,16 @@ void CBTTask::run()
             switch (msg.msgID)
             {
 #ifdef CONFIG_BLE_DATA_IBEACON
-            case MSG_INIT_BEACON:
+            case MSG_INIT_BEACON_TX:
                 deinit_bt();
                 mBeaconMajor = msg.shortParam;
                 mBeaconMinor = msg.paramID;
-                init_bt(EBTMode::iBeacon);
+                init_bt(EBTMode::iBeaconTx);
+                break;
+            case MSG_INIT_BEACON_RX:
+                deinit_bt();
+                mOnBeacon = (onBeaconRx *)msg.msgBody;
+                init_bt(EBTMode::iBeaconRx);
                 break;
 #endif
             case MSG_INIT_DATA:
