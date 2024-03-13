@@ -259,13 +259,13 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
             if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
             {
                 // TRACEDATA("bt", (uint8_t *)fields.mfg_data, fields.mfg_data_len);
-                beacon = (SBeacon *)CBTTask::Instance()->allocNewMsg(&msg, MSG_INIT_BEACON_RX, sizeof(SBeacon));
+                beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon));
                 std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);
                 beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256;
                 beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256;
                 beacon->power = fields.mfg_data[24];
                 beacon->rssi = event->disc.rssi;
-                CBTTask::Instance()->sendMessage(&msg, 100, true);
+                CBTTask::Instance()->sendMessage(&msg,100, true);
             }
         }
         return 0;
@@ -631,6 +631,7 @@ void CBTTask::run()
                 deinit_bt();
                 mOnBeacon = (onBeaconRx *)msg.msgBody;
                 mBeaconSleepTime=msg.shortParam*1000;
+                if (mOnBeacon != nullptr)mOnBeacon(nullptr);
                 init_bt(EBTMode::iBeaconRx);
                 if(mBeaconTimer == nullptr)
                 {
@@ -647,16 +648,16 @@ void CBTTask::run()
                     TRACEDATA("beacon", (uint8_t*)msg.msgBody, msg.shortParam);
                 }
                 vPortFree(msg.msgBody);
-                if(mBeaconTimer != nullptr)
-                {
-                    if(mMode == EBTMode::iBeaconRx)
-                    {
-                        deinit_bt();
-                        TDEC("sleep",mBeaconSleepTime);
-                        mBeaconTimer->start(this, ETimerEvent::SendBack,mBeaconSleepTime);
-                        mBeaconSleep=true;
-                    }
-                }
+                // if(mBeaconTimer != nullptr)
+                // {
+                //     if(mMode == EBTMode::iBeaconRx)
+                //     {
+                //         deinit_bt();
+                //         // TDEC("sleep",mBeaconSleepTime);
+                //         mBeaconTimer->start(this, ETimerEvent::SendBack,mBeaconSleepTime);
+                //         mBeaconSleep=true;
+                //     }
+                // }
                 break;
             case MSG_BEACON_TIMER:
                 if(mBeaconTimer != nullptr)
@@ -667,14 +668,13 @@ void CBTTask::run()
                         {
                             init_bt(EBTMode::iBeaconRx);
                             // TDEC("rx",1000);
+                            if (mOnBeacon != nullptr)mOnBeacon(nullptr);
                             mBeaconTimer->start(this, ETimerEvent::SendBack,1000);
                         }
                     }
                     else if(mMode == EBTMode::iBeaconRx)
                     {
                         deinit_bt();
-                        if (mOnBeacon != nullptr)
-                            mOnBeacon(nullptr);
                         // TDEC("sleep",mBeaconSleepTime);
                         mBeaconTimer->start(this, ETimerEvent::SendBack,mBeaconSleepTime);
                     }
