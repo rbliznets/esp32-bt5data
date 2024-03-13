@@ -174,7 +174,11 @@ void CBTTask::ble_on_sync_rx()
 
     /* Make sure we have proper identity address set (public preferred) */
     rc = ble_hs_util_ensure_addr(0);
-    assert(rc == 0);
+    if (rc != 0)
+    {
+        ESP_LOGE(TAG, "error ble_hs_util_ensure_addr; rc=%d", rc);
+        return;
+    }
 
     /* Begin scanning for a peripheral to connect to. */
     ble_scan();
@@ -190,7 +194,7 @@ void CBTTask::ble_scan()
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0)
     {
-        MODLOG_DFLT(ERROR, "error determining address type; rc=%d\n", rc);
+        ESP_LOGE(TAG, "error determining address type; rc=%d", rc);
         return;
     }
 
@@ -215,8 +219,7 @@ void CBTTask::ble_scan()
                       ble_rx_gap_event, NULL);
     if (rc != 0)
     {
-        MODLOG_DFLT(ERROR, "Error initiating GAP discovery procedure; rc=%d\n",
-                    rc);
+        ESP_LOGE(TAG, "Error initiating GAP discovery procedure; rc=%d", rc);
     }
 }
 
@@ -236,9 +239,10 @@ void CBTTask::ble_scan()
  */
 int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
 {
-    struct ble_gap_conn_desc desc;
     struct ble_hs_adv_fields fields;
     int rc;
+    STaskMessage msg;
+    SBeacon *beacon;
 
     switch (event->type)
     {
@@ -254,14 +258,21 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
             // MODLOG_DFLT(INFO, "DISC %d (%d)", event->disc.event_type, event->disc.rssi);
             if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
             {
-                TRACEDATA("bt", (uint8_t *)fields.mfg_data, fields.mfg_data_len);
+                // TRACEDATA("bt", (uint8_t *)fields.mfg_data, fields.mfg_data_len);
+                beacon = (SBeacon *)CBTTask::Instance()->allocNewMsg(&msg, MSG_INIT_BEACON_RX, sizeof(SBeacon));
+                std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);
+                beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256;
+                beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256;
+                beacon->power = fields.mfg_data[24];
+                beacon->rssi = event->disc.rssi;
+                CBTTask::Instance()->sendMessage(&msg, 100, true);
             }
         }
         return 0;
 
     case BLE_GAP_EVENT_DISC_COMPLETE:
-        MODLOG_DFLT(INFO, "discovery complete; reason=%d\n",
-                    event->disc_complete.reason);
+        // MODLOG_DFLT(INFO, "discovery complete; reason=%d\n",
+        //             event->disc_complete.reason);
         return 0;
 
 #if CONFIG_EXAMPLE_EXTENDED_ADV
@@ -607,6 +618,11 @@ void CBTTask::run()
 #ifdef CONFIG_BLE_DATA_IBEACON
             case MSG_INIT_BEACON_TX:
                 deinit_bt();
+                if(mBeaconTimer != nullptr)
+                {
+                    delete mBeaconTimer;
+                    mBeaconTimer = nullptr;
+                }
                 mBeaconMajor = msg.shortParam;
                 mBeaconMinor = msg.paramID;
                 init_bt(EBTMode::iBeaconTx);
@@ -614,11 +630,65 @@ void CBTTask::run()
             case MSG_INIT_BEACON_RX:
                 deinit_bt();
                 mOnBeacon = (onBeaconRx *)msg.msgBody;
+                mBeaconSleepTime=msg.shortParam*1000;
                 init_bt(EBTMode::iBeaconRx);
+                if(mBeaconTimer == nullptr)
+                {
+                    mBeaconTimer = new CSoftwareTimer(0,MSG_BEACON_TIMER);
+                }
+                mBeaconTimer->start(this, ETimerEvent::SendBack,1000);
+                mBeaconSleep =false;
+                break;
+            case MSG_BEACON_DATA:
+                if (mOnBeacon != nullptr)
+                    mOnBeacon((SBeacon*)msg.msgBody);
+                else
+                {
+                    TRACEDATA("beacon", (uint8_t*)msg.msgBody, msg.shortParam);
+                }
+                vPortFree(msg.msgBody);
+                if(mBeaconTimer != nullptr)
+                {
+                    if(mMode == EBTMode::iBeaconRx)
+                    {
+                        deinit_bt();
+                        TDEC("sleep",mBeaconSleepTime);
+                        mBeaconTimer->start(this, ETimerEvent::SendBack,mBeaconSleepTime);
+                        mBeaconSleep=true;
+                    }
+                }
+                break;
+            case MSG_BEACON_TIMER:
+                if(mBeaconTimer != nullptr)
+                {
+                    if(mBeaconSleep)
+                    {
+                        if(mMode == EBTMode::Off)
+                        {
+                            init_bt(EBTMode::iBeaconRx);
+                            // TDEC("rx",1000);
+                            mBeaconTimer->start(this, ETimerEvent::SendBack,1000);
+                        }
+                    }
+                    else if(mMode == EBTMode::iBeaconRx)
+                    {
+                        deinit_bt();
+                        if (mOnBeacon != nullptr)
+                            mOnBeacon(nullptr);
+                        // TDEC("sleep",mBeaconSleepTime);
+                        mBeaconTimer->start(this, ETimerEvent::SendBack,mBeaconSleepTime);
+                    }
+                    mBeaconSleep = !mBeaconSleep;
+                }
                 break;
 #endif
             case MSG_INIT_DATA:
                 deinit_bt();
+                if(mBeaconTimer != nullptr)
+                {
+                    delete mBeaconTimer;
+                    mBeaconTimer = nullptr;
+                }
                 mOnRx = (onBLEDataRx *)msg.msgBody;
                 init_bt(EBTMode::Data);
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
@@ -627,6 +697,11 @@ void CBTTask::run()
                 break;
             case MSG_OFF:
                 deinit_bt();
+                if(mBeaconTimer != nullptr)
+                {
+                    delete mBeaconTimer;
+                    mBeaconTimer = nullptr;
+                }
                 break;
             case MSG_WRITE_DATA:
                 if (mConnect)
@@ -705,6 +780,11 @@ void CBTTask::run()
     }
 endTask:
     deinit_bt();
+    if(mBeaconTimer != nullptr)
+    {
+        delete mBeaconTimer;
+        mBeaconTimer = nullptr;
+    }
 }
 
 bool CBTTask::sendData(uint8_t *data, size_t size, TickType_t xTicksToWait)

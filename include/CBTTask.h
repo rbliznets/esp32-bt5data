@@ -14,6 +14,7 @@
 #ifdef CONFIG_BT_NIMBLE_ENABLED
 
 #include "CBaseTask.h"
+#include "CSoftwareTimer.h"
 
 #include "host/ble_hs.h"
 #include "services/gap/ble_svc_gap.h"
@@ -28,7 +29,9 @@
 #define MSG_END_TASK (0) ///< Команда завершения задачи.
 #ifdef CONFIG_BLE_DATA_IBEACON
 #define MSG_INIT_BEACON_TX (10) ///< Команда инициализации режима iBeacon.
-#define MSG_INIT_BEACON_RX (11) ///< Команда инициализации режима iBeacon.
+#define MSG_INIT_BEACON_RX (11) 
+#define MSG_BEACON_DATA (12) 
+#define MSG_BEACON_TIMER (13) 
 #endif
 #define MSG_INIT_DATA (2)  ///< Команда инициализации режима потоковых каналов.
 #define MSG_OFF (3)		   ///< Команда отключения BT.
@@ -63,13 +66,22 @@ enum class EBTMode
 	Data ///< Обмен данными.
 };
 
+struct SBeacon
+{
+	uint8_t uuid[16];
+	uint16_t major;
+	uint16_t minor;
+	int8_t power;
+	int8_t rssi;
+};
+
 /// Функция события приема данных.
 /*!
  * \param[in] data данные.
  * \param[in] size размер данных.
  */
 typedef void onBLEDataRx(uint8_t *data, size_t size);
-typedef void onBeaconRx(uint8_t *id, uint16_t major, uint16_t minor, int8_t power, int8_t rssi);
+typedef void onBeaconRx(SBeacon *data);
 
 /// Класс логики работы канала данных по BLE.
 class CBTTask : public CBaseTask
@@ -114,6 +126,9 @@ protected:
 	uint8_t mBeaconTx = 0;	   ///< Поле мощности на 1м. Берется из nvs "btx" (u8).
 
 	onBeaconRx *mOnBeacon = nullptr; ///< Callback функция события приема данных от маяка.
+	uint32_t mBeaconSleepTime = 5000; 
+	CSoftwareTimer* mBeaconTimer = nullptr;
+	bool mBeaconSleep =false;
 
 	static void ble_on_sync_rx();
 	static void ble_scan();
@@ -189,9 +204,9 @@ public:
 	{
 		return sendCmd(MSG_INIT_BEACON_TX, major, minor);
 	};
-	inline bool setBeacon(onBeaconRx *onBeacon)
+	inline bool setBeacon(onBeaconRx *onBeacon, uint16_t sleep = 5)
 	{
-		return sendCmd(MSG_INIT_BEACON_RX, 0, (uint32_t)onBeacon);
+		return sendCmd(MSG_INIT_BEACON_RX, sleep, (uint32_t)onBeacon);
 	};
 #endif
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
