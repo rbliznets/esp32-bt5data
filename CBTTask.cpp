@@ -684,11 +684,13 @@ void CBTTask::run()
 #endif
             case MSG_INIT_DATA:
                 deinit_bt();
+#ifdef CONFIG_BLE_DATA_IBEACON
                 if(mBeaconTimer != nullptr)
                 {
                     delete mBeaconTimer;
                     mBeaconTimer = nullptr;
                 }
+#endif
                 mOnRx = (onBLEDataRx *)msg.msgBody;
                 init_bt(EBTMode::Data);
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
@@ -697,11 +699,13 @@ void CBTTask::run()
                 break;
             case MSG_OFF:
                 deinit_bt();
+#ifdef CONFIG_BLE_DATA_IBEACON
                 if(mBeaconTimer != nullptr)
                 {
                     delete mBeaconTimer;
                     mBeaconTimer = nullptr;
                 }
+#endif
                 break;
             case MSG_WRITE_DATA:
                 if (mConnect)
@@ -780,11 +784,13 @@ void CBTTask::run()
     }
 endTask:
     deinit_bt();
+#ifdef CONFIG_BLE_DATA_IBEACON
     if(mBeaconTimer != nullptr)
     {
         delete mBeaconTimer;
         mBeaconTimer = nullptr;
     }
+#endif
 }
 
 bool CBTTask::sendData(uint8_t *data, size_t size, TickType_t xTicksToWait)

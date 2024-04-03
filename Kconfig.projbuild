@@ -9,7 +9,7 @@ menu "BLE Data (NimBLE)"
 
     choice
         prompt "Choose core for the BLE Data task"
-        default DEBUG_TRACE_TASK0
+        default BLE_DATA_TASK0
 
         config BLE_DATA_TASK0
             bool "core 0"
