@@ -192,6 +192,7 @@ public:
 	static CBTTask *Instance();
 	/// Освобождение ресурсов.
 	static void free();
+	static inline bool isRun(){return (theSingleInstance != nullptr);};
 
 #ifdef CONFIG_BLE_DATA_IBEACON
 	/// Включить режим iBeacon.
