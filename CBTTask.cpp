@@ -801,7 +801,7 @@ void CBTTask::run()
                 TRACE_WARNING("CBTTask:unknown message", msg.msgID);
                 break;
             }
-        }
+        } 
     }
 endTask:
     if(mManufacturerData != nullptr)
