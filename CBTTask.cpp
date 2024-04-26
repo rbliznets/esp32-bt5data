@@ -153,7 +153,7 @@ void CBTTask::free()
     }
 }
 
-CBTTask::CBTTask() : CBaseTask()
+CBTTask::CBTTask() : CBaseTask(), CLock()
 {
 }
 
@@ -373,8 +373,8 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        // MODLOG_DFLT(INFO, "advertise complete; reason=%d",
-        //             event->adv_complete.reason);
+        MODLOG_DFLT(INFO, "advertise complete; reason=%d",
+                    event->adv_complete.reason);
         ble_advertise_data();
         return 0;
 
@@ -448,7 +448,12 @@ void CBTTask::ble_advertise_data()
     fields.num_uuids16 = 1;
     fields.uuids16_is_complete = 1;
 
+    CBTTask::Instance()->lock();
+    fields.mfg_data=CBTTask::Instance()->mManufacturerData;
+    fields.mfg_data_len=CBTTask::Instance()->mManufacturerDataSize;
+
     rc = ble_gap_adv_set_fields(&fields);
+    CBTTask::Instance()->unlock();
     if (rc != 0)
     {
         ESP_LOGE(TAG, "error setting advertisement data; rc=%d", rc);
@@ -461,6 +466,8 @@ void CBTTask::ble_advertise_data()
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
     rc = ble_gap_adv_start(CBTTask::Instance()->own_addr_type, nullptr, BLE_HS_FOREVER,
                            &adv_params, ble_server_gap_event, nullptr);
+    // rc = ble_gap_adv_start(CBTTask::Instance()->own_addr_type, nullptr, 1000,
+    //                        &adv_params, ble_server_gap_event, nullptr);
     if (rc != 0)
     {
         ESP_LOGE(TAG, "error enabling advertisement; rc=%d", rc);
@@ -774,6 +781,20 @@ void CBTTask::run()
                 vPortFree(msg.msgBody);
                 break;
 #endif
+            case MSG_SET_ADV_DATA:
+                TRACEDATA("MSG_SET_ADV_DATA",(uint8_t *)msg.msgBody,msg.shortParam);
+                lock();
+                if(mManufacturerData != nullptr)
+                    vPortFree(mManufacturerData);
+                mManufacturerData = (uint8_t *)msg.msgBody;
+                mManufacturerDataSize = msg.shortParam;
+                unlock();
+                if (!mConnect)
+                {
+                    ble_gap_adv_stop();
+                    ble_advertise_data();
+                }
+                break;
             case MSG_END_TASK:
                 goto endTask;
             default:
@@ -783,6 +804,8 @@ void CBTTask::run()
         }
     }
 endTask:
+    if(mManufacturerData != nullptr)
+        vPortFree(mManufacturerData);
     deinit_bt();
 #ifdef CONFIG_BLE_DATA_IBEACON
     if(mBeaconTimer != nullptr)
@@ -812,5 +835,22 @@ bool CBTTask::sendData2(uint8_t *data, size_t size, uint16_t index, TickType_t x
     return sendMessage(&msg, xTicksToWait, true);
 }
 #endif
+
+bool CBTTask::setManufacturerData(uint8_t *data, size_t size, TickType_t xTicksToWait)
+{
+    STaskMessage msg;
+    if(data != nullptr)
+    {
+        uint8_t *dt = allocNewMsg(&msg, MSG_SET_ADV_DATA, size);
+        std::memcpy(dt, data, size);
+    }
+    else
+    {
+        msg.msgID = MSG_SET_ADV_DATA;
+        msg.msgBody = nullptr;
+        msg.shortParam = 0;
+    }
+    return sendMessage(&msg, xTicksToWait, true);
+}
 
 #endif

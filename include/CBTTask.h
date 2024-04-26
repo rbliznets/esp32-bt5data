@@ -14,6 +14,7 @@
 #ifdef CONFIG_BT_NIMBLE_ENABLED
 
 #include "CBaseTask.h"
+#include "CLock.h"
 #include "CSoftwareTimer.h"
 
 #include "host/ble_hs.h"
@@ -29,14 +30,15 @@
 #define MSG_END_TASK (0) ///< Команда завершения задачи.
 #ifdef CONFIG_BLE_DATA_IBEACON
 #define MSG_INIT_BEACON_TX (10) ///< Команда инициализации режима iBeacon.
-#define MSG_INIT_BEACON_RX (11) 
-#define MSG_BEACON_DATA (12) 
-#define MSG_BEACON_TIMER (13) 
+#define MSG_INIT_BEACON_RX (11)
+#define MSG_BEACON_DATA (12)
+#define MSG_BEACON_TIMER (13)
 #endif
-#define MSG_INIT_DATA (2)  ///< Команда инициализации режима потоковых каналов.
-#define MSG_OFF (3)		   ///< Команда отключения BT.
-#define MSG_WRITE_DATA (4) ///< Сообщение для записи данных в основной канал.
-#define MSG_READ_DATA (5)  ///< Сообщение для чтения данных из основного канала.
+#define MSG_INIT_DATA (2)	 ///< Команда инициализации режима потоковых каналов.
+#define MSG_OFF (3)			 ///< Команда отключения BT.
+#define MSG_WRITE_DATA (4)	 ///< Сообщение для записи данных в основной канал.
+#define MSG_READ_DATA (5)	 ///< Сообщение для чтения данных из основного канала.
+#define MSG_SET_ADV_DATA (6) ///< Установить данные для поля Manufacturer specific data в advertizing.
 
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 #define MSG_READ_DATA2 (16)	 ///< Сообщение для чтения данных из второго канала.
@@ -84,7 +86,7 @@ typedef void onBLEDataRx(uint8_t *data, size_t size);
 typedef void onBeaconRx(SBeacon *data);
 
 /// Класс логики работы канала данных по BLE.
-class CBTTask : public CBaseTask
+class CBTTask : public CBaseTask, CLock
 {
 private:
 	static CBTTask *theSingleInstance;	///< Единственный объект.
@@ -126,9 +128,9 @@ protected:
 	uint8_t mBeaconTx = 0;	   ///< Поле мощности на 1м. Берется из nvs "btx" (u8).
 
 	onBeaconRx *mOnBeacon = nullptr; ///< Callback функция события приема данных от маяка.
-	uint32_t mBeaconSleepTime = 5000; 
-	CSoftwareTimer* mBeaconTimer = nullptr;
-	bool mBeaconSleep =false;
+	uint32_t mBeaconSleepTime = 5000;
+	CSoftwareTimer *mBeaconTimer = nullptr;
+	bool mBeaconSleep = false;
 
 	static void ble_on_sync_rx();
 	static void ble_scan();
@@ -141,6 +143,8 @@ protected:
 	/// Установка случайного адреса (iBeacon).
 	static void ble_app_set_addr();
 #endif
+	uint8_t* mManufacturerData = nullptr;
+	uint8_t	mManufacturerDataSize = 0;
 
 	/// Запуск Nimble.
 	/*!
@@ -192,7 +196,7 @@ public:
 	static CBTTask *Instance();
 	/// Освобождение ресурсов.
 	static void free();
-	static inline bool isRun(){return (theSingleInstance != nullptr);};
+	static inline bool isRun() { return (theSingleInstance != nullptr); };
 
 #ifdef CONFIG_BLE_DATA_IBEACON
 	/// Включить режим iBeacon.
@@ -250,5 +254,14 @@ public:
 	  \return true если без ошибки.
 	*/
 	bool sendData(uint8_t *data, size_t size, TickType_t xTicksToWait = portMAX_DELAY);
+	
+	/// Установить данные для advertizing.
+	/*!
+	  \param[in] data данные.
+	  \param[in] size размер данных.
+	  \param[in] xTicksToWait время таймаута очереди сообщений.
+	  \return true если без ошибки.
+	*/
+	bool setManufacturerData(uint8_t *data, size_t size, TickType_t xTicksToWait = portMAX_DELAY);
 };
 #endif
