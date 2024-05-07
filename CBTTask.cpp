@@ -782,14 +782,14 @@ void CBTTask::run()
                 break;
 #endif
             case MSG_SET_ADV_DATA:
-                TRACEDATA("MSG_SET_ADV_DATA",(uint8_t *)msg.msgBody,msg.shortParam);
+                // TRACEDATA("MSG_SET_ADV_DATA",(uint8_t *)msg.msgBody,msg.shortParam);
                 lock();
                 if(mManufacturerData != nullptr)
                     vPortFree(mManufacturerData);
                 mManufacturerData = (uint8_t *)msg.msgBody;
                 mManufacturerDataSize = msg.shortParam;
                 unlock();
-                if (!mConnect)
+                if ((!mConnect) && (ble_hs_synced()))
                 {
                     ble_gap_adv_stop();
                     ble_advertise_data();
