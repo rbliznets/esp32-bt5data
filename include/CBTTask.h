@@ -41,6 +41,7 @@
 #define MSG_SET_ADV_DATA (6) ///< Установить данные для поля Manufacturer specific data в advertizing.
 
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
+#define MSG_INIT_DATA3 (15)	 ///< Команда установки callback функции на соединение.
 #define MSG_READ_DATA2 (16)	 ///< Сообщение для чтения данных из второго канала.
 #define MSG_INIT_DATA2 (17)	 ///< Команда установки callback функции на прием данных из второго канала.
 #define MSG_WRITE_DATA2 (18) ///< Сообщение для записи данных во второй канал.
@@ -84,6 +85,7 @@ struct SBeacon
  */
 typedef void onBLEDataRx(uint8_t *data, size_t size);
 typedef void onBeaconRx(SBeacon *data);
+typedef void onBLEConnect(bool connected);
 
 /// Класс логики работы канала данных по BLE.
 class CBTTask : public CBaseTask, CLock
@@ -106,6 +108,8 @@ protected:
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 	onBLEDataRx *mOnRx2 = nullptr; ///< Callback функция события приема данных на втором канале.
 #endif
+	onBLEConnect* mOnConnect = nullptr; ///< Callback функция события соединения.
+
 	uint8_t own_addr_type; ///< Тип адреса BLE.
 
 	/// Установить режим работы.
@@ -221,8 +225,9 @@ public:
 	  \param[in] onRx2 callback на прием данных второго канала.
 	  \return true если без ошибки.
 	*/
-	inline bool setData(onBLEDataRx *onRx, onBLEDataRx *onRx2)
+	inline bool setData(onBLEDataRx *onRx, onBLEDataRx *onRx2, onBLEConnect* onConnect = nullptr)
 	{
+		sendCmd(MSG_INIT_DATA3, 0, (uint32_t)onConnect);
 		sendCmd(MSG_INIT_DATA2, 0, (uint32_t)onRx2);
 		return sendCmd(MSG_INIT_DATA, 0, (uint32_t)onRx);
 	};
@@ -241,8 +246,9 @@ public:
 	  \param[in] onRx callback на прием данных основного канала.
 	  \return true если без ошибки.
 	*/
-	inline bool setData(onBLEDataRx *onRx)
+	inline bool setData(onBLEDataRx *onRx, onBLEConnect* onConnect = nullptr)
 	{
+		sendCmd(MSG_INIT_DATA3, 0, (uint32_t)onConnect);
 		return sendCmd(MSG_INIT_DATA, 0, (uint32_t)onRx);
 	};
 #endif

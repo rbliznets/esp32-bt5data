@@ -357,12 +357,14 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         {
             ESP_LOGI(TAG, "Connection established");
             CBTTask::Instance()->mConnect = true;
+            if(CBTTask::Instance()->mOnConnect != nullptr)CBTTask::Instance()->mOnConnect(true);
         }
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
         CBTTask::Instance()->mConnect = false;
+        if(CBTTask::Instance()->mOnConnect != nullptr)CBTTask::Instance()->mOnConnect(false);
         ble_advertise_data();
         return 0;
 
@@ -781,6 +783,9 @@ void CBTTask::run()
                 vPortFree(msg.msgBody);
                 break;
 #endif
+            case MSG_INIT_DATA3:
+                mOnConnect = (onBLEConnect *)msg.msgBody;
+                break;
             case MSG_SET_ADV_DATA:
                 // TRACEDATA("MSG_SET_ADV_DATA",(uint8_t *)msg.msgBody,msg.shortParam);
                 lock();
