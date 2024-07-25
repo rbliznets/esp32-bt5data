@@ -18,6 +18,10 @@
 #include "CSoftwareTimer.h"
 
 #include "host/ble_hs.h"
+/////@@@@@@@@@@@@@@@@@@@
+#undef max
+#undef min
+////////////////////////////////
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 
