@@ -9,10 +9,13 @@
 */
 
 #include "CBTTask.h"
+#include "services/gap/ble_svc_gap.h"
+#include "services/gatt/ble_svc_gatt.h"
+#include "host/ble_hs_mbuf.h"
+#include "host/ble_gap.h"
+// #include "host/ble_hs.h"
 
 #ifdef CONFIG_BT_NIMBLE_ENABLED
-#include "CTrace.h"
-
 #include "nimble/ble.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
@@ -21,6 +24,11 @@
 
 #include "nvs.h"
 #include "esp_random.h"
+/////@@@@@@@@@@@@@@@@@@@
+// #undef max
+// #undef min
+////////////////////////////////
+#include "CTrace.h"
 #include <cstring>
 
 extern "C" void ble_store_config_init(void);

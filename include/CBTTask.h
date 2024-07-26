@@ -17,13 +17,8 @@
 #include "CLock.h"
 #include "CSoftwareTimer.h"
 
-#include "host/ble_hs.h"
-/////@@@@@@@@@@@@@@@@@@@
-#undef max
-#undef min
-////////////////////////////////
-#include "services/gap/ble_svc_gap.h"
-#include "services/gatt/ble_svc_gatt.h"
+#include "host/ble_uuid.h"
+#include "host/ble_gatt.h"
 
 #ifdef CONFIG_ESP_TASK_WDT
 #define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS((CONFIG_ESP_TASK_WDT_TIMEOUT_S - 1) * 1000 + 500)
