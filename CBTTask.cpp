@@ -80,7 +80,6 @@ int CBTTask::gatt_svr_chr_write(struct os_mbuf *om, uint16_t chn)
     uint16_t om_len;
     int rc;
     STaskMessage msg;
-    uint8_t *data;
 
     om_len = OS_MBUF_PKTLEN(om);
     if (om_len < 1)
@@ -89,10 +88,10 @@ int CBTTask::gatt_svr_chr_write(struct os_mbuf *om, uint16_t chn)
     }
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     if (chn == 2)
-        data = allocNewMsg(&msg, MSG_READ_DATA2, om_len);
+        allocNewMsg(&msg, MSG_READ_DATA2, om_len);
     else
 #endif
-        data = allocNewMsg(&msg, MSG_READ_DATA, om_len);
+        allocNewMsg(&msg, MSG_READ_DATA, om_len);
 
     rc = ble_hs_mbuf_to_flat(om, msg.msgBody, om_len, nullptr);
     if (rc != 0)
@@ -155,7 +154,12 @@ void CBTTask::free()
         do
         {
             vTaskDelay(1);
-        } while (theSingleInstance->mTaskQueue != nullptr);
+        }
+#if (INCLUDE_vTaskDelete == 1)
+        while (theSingleInstance->mTaskHandle != nullptr);
+#else
+        while (theSingleInstance->mTaskQueue != nullptr);
+#endif
         delete theSingleInstance;
         theSingleInstance = nullptr;
     }
@@ -273,7 +277,7 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
                 beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256;
                 beacon->power = fields.mfg_data[24];
                 beacon->rssi = event->disc.rssi;
-                CBTTask::Instance()->sendMessage(&msg,100, true);
+                CBTTask::Instance()->sendMessage(&msg, 100, true);
             }
         }
         return 0;
@@ -365,14 +369,16 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         {
             ESP_LOGI(TAG, "Connection established");
             CBTTask::Instance()->mConnect = true;
-            if(CBTTask::Instance()->mOnConnect != nullptr)CBTTask::Instance()->mOnConnect(true);
+            if (CBTTask::Instance()->mOnConnect != nullptr)
+                CBTTask::Instance()->mOnConnect(true);
         }
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
         ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
         CBTTask::Instance()->mConnect = false;
-        if(CBTTask::Instance()->mOnConnect != nullptr)CBTTask::Instance()->mOnConnect(false);
+        if (CBTTask::Instance()->mOnConnect != nullptr)
+            CBTTask::Instance()->mOnConnect(false);
         ble_advertise_data();
         return 0;
 
@@ -459,8 +465,8 @@ void CBTTask::ble_advertise_data()
     fields.uuids16_is_complete = 1;
 
     CBTTask::Instance()->lock();
-    fields.mfg_data=CBTTask::Instance()->mManufacturerData;
-    fields.mfg_data_len=CBTTask::Instance()->mManufacturerDataSize;
+    fields.mfg_data = CBTTask::Instance()->mManufacturerData;
+    fields.mfg_data_len = CBTTask::Instance()->mManufacturerDataSize;
 
     rc = ble_gap_adv_set_fields(&fields);
     CBTTask::Instance()->unlock();
@@ -635,7 +641,7 @@ void CBTTask::run()
 #ifdef CONFIG_BLE_DATA_IBEACON
             case MSG_INIT_BEACON_TX:
                 deinit_bt();
-                if(mBeaconTimer != nullptr)
+                if (mBeaconTimer != nullptr)
                 {
                     delete mBeaconTimer;
                     mBeaconTimer = nullptr;
@@ -647,22 +653,23 @@ void CBTTask::run()
             case MSG_INIT_BEACON_RX:
                 deinit_bt();
                 mOnBeacon = (onBeaconRx *)msg.msgBody;
-                mBeaconSleepTime=msg.shortParam*1000;
-                if (mOnBeacon != nullptr)mOnBeacon(nullptr);
+                mBeaconSleepTime = msg.shortParam * 1000;
+                if (mOnBeacon != nullptr)
+                    mOnBeacon(nullptr);
                 init_bt(EBTMode::iBeaconRx);
-                if(mBeaconTimer == nullptr)
+                if (mBeaconTimer == nullptr)
                 {
-                    mBeaconTimer = new CSoftwareTimer(0,MSG_BEACON_TIMER);
+                    mBeaconTimer = new CSoftwareTimer(0, MSG_BEACON_TIMER);
                 }
-                mBeaconTimer->start(this, ETimerEvent::SendBack,1000);
-                mBeaconSleep =false;
+                mBeaconTimer->start(this, ETimerEvent::SendBack, 1000);
+                mBeaconSleep = false;
                 break;
             case MSG_BEACON_DATA:
                 if (mOnBeacon != nullptr)
-                    mOnBeacon((SBeacon*)msg.msgBody);
+                    mOnBeacon((SBeacon *)msg.msgBody);
                 else
                 {
-                    TRACEDATA("beacon", (uint8_t*)msg.msgBody, msg.shortParam);
+                    TRACEDATA("beacon", (uint8_t *)msg.msgBody, msg.shortParam);
                 }
                 vPortFree(msg.msgBody);
                 // if(mBeaconTimer != nullptr)
@@ -677,23 +684,24 @@ void CBTTask::run()
                 // }
                 break;
             case MSG_BEACON_TIMER:
-                if(mBeaconTimer != nullptr)
+                if (mBeaconTimer != nullptr)
                 {
-                    if(mBeaconSleep)
+                    if (mBeaconSleep)
                     {
-                        if(mMode == EBTMode::Off)
+                        if (mMode == EBTMode::Off)
                         {
                             init_bt(EBTMode::iBeaconRx);
                             // TDEC("rx",1000);
-                            if (mOnBeacon != nullptr)mOnBeacon(nullptr);
-                            mBeaconTimer->start(this, ETimerEvent::SendBack,1000);
+                            if (mOnBeacon != nullptr)
+                                mOnBeacon(nullptr);
+                            mBeaconTimer->start(this, ETimerEvent::SendBack, 1000);
                         }
                     }
-                    else if(mMode == EBTMode::iBeaconRx)
+                    else if (mMode == EBTMode::iBeaconRx)
                     {
                         deinit_bt();
                         // TDEC("sleep",mBeaconSleepTime);
-                        mBeaconTimer->start(this, ETimerEvent::SendBack,mBeaconSleepTime);
+                        mBeaconTimer->start(this, ETimerEvent::SendBack, mBeaconSleepTime);
                     }
                     mBeaconSleep = !mBeaconSleep;
                 }
@@ -702,7 +710,7 @@ void CBTTask::run()
             case MSG_INIT_DATA:
                 deinit_bt();
 #ifdef CONFIG_BLE_DATA_IBEACON
-                if(mBeaconTimer != nullptr)
+                if (mBeaconTimer != nullptr)
                 {
                     delete mBeaconTimer;
                     mBeaconTimer = nullptr;
@@ -717,7 +725,7 @@ void CBTTask::run()
             case MSG_OFF:
                 deinit_bt();
 #ifdef CONFIG_BLE_DATA_IBEACON
-                if(mBeaconTimer != nullptr)
+                if (mBeaconTimer != nullptr)
                 {
                     delete mBeaconTimer;
                     mBeaconTimer = nullptr;
@@ -797,7 +805,7 @@ void CBTTask::run()
             case MSG_SET_ADV_DATA:
                 // TRACEDATA("MSG_SET_ADV_DATA",(uint8_t *)msg.msgBody,msg.shortParam);
                 lock();
-                if(mManufacturerData != nullptr)
+                if (mManufacturerData != nullptr)
                     vPortFree(mManufacturerData);
                 mManufacturerData = (uint8_t *)msg.msgBody;
                 mManufacturerDataSize = msg.shortParam;
@@ -814,14 +822,14 @@ void CBTTask::run()
                 TRACE_WARNING("CBTTask:unknown message", msg.msgID);
                 break;
             }
-        } 
+        }
     }
 endTask:
-    if(mManufacturerData != nullptr)
+    if (mManufacturerData != nullptr)
         vPortFree(mManufacturerData);
     deinit_bt();
 #ifdef CONFIG_BLE_DATA_IBEACON
-    if(mBeaconTimer != nullptr)
+    if (mBeaconTimer != nullptr)
     {
         delete mBeaconTimer;
         mBeaconTimer = nullptr;
@@ -852,7 +860,7 @@ bool CBTTask::sendData2(uint8_t *data, size_t size, uint16_t index, TickType_t x
 bool CBTTask::setManufacturerData(uint8_t *data, size_t size, TickType_t xTicksToWait)
 {
     STaskMessage msg;
-    if(data != nullptr)
+    if (data != nullptr)
     {
         uint8_t *dt = allocNewMsg(&msg, MSG_SET_ADV_DATA, size);
         std::memcpy(dt, data, size);
