@@ -24,9 +24,10 @@
 
 #include "nvs.h"
 #include "esp_random.h"
+
 /////@@@@@@@@@@@@@@@@@@@
-// #undef max
-// #undef min
+#undef max
+#undef min
 ////////////////////////////////
 #include "CTrace.h"
 #include <cstring>
