@@ -605,6 +605,9 @@ void CBTTask::ble_host_task(void *param)
 
 void CBTTask::run()
 {
+#ifndef CONFIG_FREERTOS_CHECK_STACKOVERFLOW_NONE
+	UBaseType_t m1 = uxTaskGetStackHighWaterMark2(nullptr);
+#endif 
     STaskMessage msg;
 
 #ifdef CONFIG_BLE_DATA_IBEACON
@@ -823,6 +826,14 @@ void CBTTask::run()
                 TRACE_WARNING("CBTTask:unknown message", msg.msgID);
                 break;
             }
+#ifndef CONFIG_FREERTOS_CHECK_STACKOVERFLOW_NONE
+			UBaseType_t m2 = uxTaskGetStackHighWaterMark2(nullptr);
+			if (m2 != m1)
+			{
+				m1 = m2;
+				TDEC("free bttask stack", m2);
+			}
+#endif
         }
     }
 endTask:
