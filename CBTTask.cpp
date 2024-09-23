@@ -182,7 +182,7 @@ void CBTTask::ble_on_reset(int reason)
 #ifdef CONFIG_BLE_DATA_IBEACON
 void CBTTask::ble_on_sync_rx()
 {
-    ESP_LOGI(TAG, "BLE rx");
+    ESP_LOGD(TAG, "BLE rx");
     int rc;
 
     /* Make sure we have proper identity address set (public preferred) */
@@ -304,7 +304,7 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
 
 void CBTTask::ble_on_sync_beacon()
 {
-    ESP_LOGI(TAG, "BLE sync beacon");
+    ESP_LOGD(TAG, "BLE sync beacon");
     /* Generate a non-resolvable private address. */
     ble_app_set_addr();
     /* Advertise indefinitely. */
@@ -348,7 +348,7 @@ void CBTTask::ble_advertise_beacon()
     rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, nullptr, BLE_HS_FOREVER,
                            &adv_params, nullptr, nullptr);
     if (rc == 0)
-        ESP_LOGI(TAG, "iBeacon advertisement started");
+        ESP_LOGD(TAG, "iBeacon advertisement started");
     else
         ESP_LOGE(TAG, "error setting advertisement iBeacon; rc=%d", rc);
 }
@@ -368,7 +368,7 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         }
         else
         {
-            ESP_LOGI(TAG, "Connection established");
+            ESP_LOGD(TAG, "Connection established");
             CBTTask::Instance()->mConnect = true;
             if (CBTTask::Instance()->mOnConnect != nullptr)
                 CBTTask::Instance()->mOnConnect(true);
@@ -376,7 +376,7 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
-        ESP_LOGI(TAG, "disconnect; reason=%d", event->disconnect.reason);
+        ESP_LOGD(TAG, "disconnect; reason=%d", event->disconnect.reason);
         CBTTask::Instance()->mConnect = false;
         if (CBTTask::Instance()->mOnConnect != nullptr)
             CBTTask::Instance()->mOnConnect(false);
@@ -490,7 +490,7 @@ void CBTTask::ble_advertise_data()
         ESP_LOGE(TAG, "error enabling advertisement; rc=%d", rc);
         return;
     }
-    ESP_LOGI(TAG, "Data advertisement started");
+    ESP_LOGD(TAG, "Data advertisement started");
 }
 
 void CBTTask::ble_on_sync_data()
