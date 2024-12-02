@@ -89,10 +89,10 @@ int CBTTask::gatt_svr_chr_write(struct os_mbuf *om, uint16_t chn)
     }
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     if (chn == 2)
-        allocNewMsg(&msg, MSG_READ_DATA2, om_len);
+        allocNewMsg(&msg, MSG_READ_DATA2, om_len, true);
     else
 #endif
-        allocNewMsg(&msg, MSG_READ_DATA, om_len);
+        allocNewMsg(&msg, MSG_READ_DATA, om_len, true);
 
     rc = ble_hs_mbuf_to_flat(om, msg.msgBody, om_len, nullptr);
     if (rc != 0)
@@ -272,7 +272,7 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
             if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
             {
                 // TRACEDATA("bt", (uint8_t *)fields.mfg_data, fields.mfg_data_len);
-                beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon));
+                beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
                 std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);
                 beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256;
                 beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256;
@@ -852,7 +852,7 @@ endTask:
 bool CBTTask::sendData(uint8_t *data, size_t size, TickType_t xTicksToWait)
 {
     STaskMessage msg;
-    uint8_t *dt = allocNewMsg(&msg, MSG_WRITE_DATA, size);
+    uint8_t *dt = allocNewMsg(&msg, MSG_WRITE_DATA, size, true);
     std::memcpy(dt, data, size);
     return sendMessage(&msg, xTicksToWait, true);
 }
@@ -861,7 +861,7 @@ bool CBTTask::sendData(uint8_t *data, size_t size, TickType_t xTicksToWait)
 bool CBTTask::sendData2(uint8_t *data, size_t size, uint16_t index, TickType_t xTicksToWait)
 {
     STaskMessage msg;
-    uint8_t *dt = allocNewMsg(&msg, MSG_WRITE_DATA2, size + 2);
+    uint8_t *dt = allocNewMsg(&msg, MSG_WRITE_DATA2, size + 2, true);
     std::memcpy(&dt[2], data, size);
     dt[0] = (uint8_t)index;
     dt[1] = (uint8_t)(index >> 8);
@@ -874,7 +874,7 @@ bool CBTTask::setManufacturerData(uint8_t *data, size_t size, TickType_t xTicksT
     STaskMessage msg;
     if (data != nullptr)
     {
-        uint8_t *dt = allocNewMsg(&msg, MSG_SET_ADV_DATA, size);
+        uint8_t *dt = allocNewMsg(&msg, MSG_SET_ADV_DATA, size, true);
         std::memcpy(dt, data, size);
     }
     else
