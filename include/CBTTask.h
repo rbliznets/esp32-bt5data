@@ -39,8 +39,8 @@
 #define MSG_READ_DATA (5)	 ///< Сообщение для чтения данных из основного канала.
 #define MSG_SET_ADV_DATA (6) ///< Установить данные для поля Manufacturer specific data в advertizing.
 
-#ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 #define MSG_INIT_DATA3 (15)	 ///< Команда установки callback функции на соединение.
+#ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 #define MSG_READ_DATA2 (16)	 ///< Сообщение для чтения данных из второго канала.
 #define MSG_INIT_DATA2 (17)	 ///< Команда установки callback функции на прием данных из второго канала.
 #define MSG_WRITE_DATA2 (18) ///< Сообщение для записи данных во второй канал.
