@@ -48,7 +48,7 @@
 #endif
 
 #define BTTASK_NAME "bt"			///< Имя задачи для отладки.
-#define BTTASK_STACKSIZE (3 * 1024) ///< Размер стека задачи.
+#define BTTASK_STACKSIZE (4 * 1024) ///< Размер стека задачи.
 #define BTTASK_PRIOR (2)			///< Приоритет задачи.
 #define BTTASK_LENGTH (30)			///< Длина приемной очереди задачи.
 #ifdef CONFIG_BLE_DATA_TASK0
