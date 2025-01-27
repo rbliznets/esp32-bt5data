@@ -192,6 +192,8 @@ protected:
 	using CBaseTask::sendCmd;
 
 public:
+	static const char* device_name;
+
 	/// Единственный экземпляр класса.
 	/*!
 	  \return Указатель на CBTTask

@@ -76,6 +76,8 @@ const struct ble_gatt_svc_def CBTTask::gatt_svr_svcs[] = {
 
 static const char *TAG = "BTTask";
 
+const char* CBTTask::device_name = CONFIG_BLE_DATA_DEVICE_NAME;
+
 int CBTTask::gatt_svr_chr_write(struct os_mbuf *om, uint16_t chn)
 {
     uint16_t om_len;
@@ -566,7 +568,7 @@ EBTMode CBTTask::init_bt(EBTMode mode)
         ble_hs_cfg.sync_cb = ble_on_sync_data;
         if (gatt_svr_init() != 0)
             ESP_LOGE(TAG, "Register custom service failed");
-        if (ble_svc_gap_device_name_set(CONFIG_BLE_DATA_DEVICE_NAME) != 0)
+        if (ble_svc_gap_device_name_set(CBTTask::device_name) != 0)
             ESP_LOGE(TAG, "Set the default device name failed");
         break;
     default:
