@@ -76,7 +76,7 @@ const struct ble_gatt_svc_def CBTTask::gatt_svr_svcs[] = {
 
 static const char *TAG = "BTTask";
 
-const char* CBTTask::device_name = CONFIG_BLE_DATA_DEVICE_NAME;
+const char *CBTTask::device_name = CONFIG_BLE_DATA_DEVICE_NAME;
 
 int CBTTask::gatt_svr_chr_write(struct os_mbuf *om, uint16_t chn)
 {
@@ -421,13 +421,118 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
     }
 }
 
-/**
- * Enables advertising with the following parameters:
- *     o General discoverable mode.
- *     o Undirected connectable mode.
- */
+#ifdef CONFIG_BT_NIMBLE_EXT_ADV
+static uint8_t periodic_adv_raw_data[] = {'E', 'S', 'P', '_', 'P', 'E', 'R', 'I', 'O', 'D', 'I', 'C', '_', 'A', 'D', 'V'};
+#endif
+
 void CBTTask::ble_advertise_data()
 {
+#ifdef CONFIG_BT_NIMBLE_EXT_ADV
+    int rc;
+    struct ble_gap_periodic_adv_params pparams;
+    struct ble_gap_ext_adv_params params;
+    struct ble_hs_adv_fields adv_fields;
+    struct os_mbuf *data;
+    uint8_t instance = 1;
+    ble_addr_t addr;
+#ifdef BT_NIMBLE_ENABLE_PERIODIC_ADV
+    struct ble_gap_periodic_adv_enable_params eparams;
+    memset(&eparams, 0, sizeof(eparams));
+#endif
+
+    /* set random (NRPA) address for instance */
+    rc = ble_hs_id_gen_rnd(1, &addr);
+    assert(rc == 0);
+
+
+    /* For periodic we use instance with non-connectable advertising */
+    memset(&params, 0, sizeof(params));
+
+    /* advertise using random addr */
+    params.own_addr_type = BLE_OWN_ADDR_RANDOM;
+    params.primary_phy = BLE_HCI_LE_PHY_1M;
+    params.secondary_phy = BLE_HCI_LE_PHY_2M;
+    params.sid = 2;
+
+    /* configure instance 1 */
+    rc = ble_gap_ext_adv_configure(instance, &params, NULL, NULL, NULL);
+    assert(rc == 0);
+
+    rc = ble_gap_ext_adv_set_addr(instance, &addr);
+    assert(rc == 0);
+
+    memset(&adv_fields, 0, sizeof(adv_fields));
+
+        /* Advertise two flags:
+     *     o Discoverability in forthcoming advertisement (general)
+     *     o BLE-only (BR/EDR unsupported).
+     */
+    adv_fields.flags = BLE_HS_ADV_F_DISC_GEN |
+                   BLE_HS_ADV_F_BREDR_UNSUP;
+
+    const char* name = ble_svc_gap_device_name();
+    adv_fields.name = (const uint8_t *)name;
+    adv_fields.name_len = strlen(name);
+    adv_fields.name_is_complete = 1;
+
+    adv_fields.tx_pwr_lvl_is_present = 1;
+    adv_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+
+    ble_uuid16_t t[1] = {BLE_UUID16_INIT(BLE_SVC_SPP_UUID16)};
+    adv_fields.uuids16 = t;
+    adv_fields.num_uuids16 = 1;
+    adv_fields.uuids16_is_complete = 1;
+
+    CBTTask::Instance()->lock();
+    adv_fields.mfg_data = CBTTask::Instance()->mManufacturerData;
+    adv_fields.mfg_data_len = CBTTask::Instance()->mManufacturerDataSize;
+
+    /* Default to legacy PDUs size, mbuf chain will be increased if needed
+     */
+    data = os_msys_get_pkthdr(BLE_HCI_MAX_ADV_DATA_LEN, 0);
+    assert(data);
+
+    rc = ble_hs_adv_set_fields_mbuf(&adv_fields, data);
+    assert(rc == 0);
+    CBTTask::Instance()->unlock();
+
+    rc = ble_gap_ext_adv_set_data(instance, data);
+    assert(rc == 0);
+ 
+    /* configure periodic advertising */
+    memset(&pparams, 0, sizeof(pparams));
+    pparams.include_tx_power = 1;
+    pparams.itvl_min = BLE_GAP_ADV_ITVL_MS(120);
+    pparams.itvl_max = BLE_GAP_ADV_ITVL_MS(240);
+
+//     rc = ble_gap_periodic_adv_configure(instance, &pparams);
+//     assert(rc == 0);
+
+//     data = os_msys_get_pkthdr(sizeof(periodic_adv_raw_data), 0);
+//     assert(data);
+
+//     rc = os_mbuf_append(data, periodic_adv_raw_data, sizeof(periodic_adv_raw_data));
+//     assert(rc == 0);
+// #ifdef BT_NIMBLE_ENABLE_PERIODIC_ADV
+//     rc = ble_gap_periodic_adv_set_data(instance, data, NULL);
+// #else
+//     rc = ble_gap_periodic_adv_set_data(instance, data);
+// #endif
+//     assert(rc == 0);
+
+/* start periodic advertising */
+#ifdef BT_NIMBLE_ENABLE_PERIODIC_ADV
+    eparams.include_adi = 1;
+    rc = ble_gap_periodic_adv_start(instance, &eparams);
+#else
+    rc = ble_gap_periodic_adv_start(instance);
+#endif
+    assert(rc == 0);
+
+    /* start advertising */
+    rc = ble_gap_ext_adv_start(instance, 0, 0);
+    assert(rc == 0);
+#else
     struct ble_gap_adv_params adv_params;
     struct ble_hs_adv_fields fields;
     const char *name;
@@ -470,7 +575,7 @@ void CBTTask::ble_advertise_data()
     CBTTask::Instance()->lock();
     fields.mfg_data = CBTTask::Instance()->mManufacturerData;
     fields.mfg_data_len = CBTTask::Instance()->mManufacturerDataSize;
-
+ 
     rc = ble_gap_adv_set_fields(&fields);
     CBTTask::Instance()->unlock();
     if (rc != 0)
@@ -493,6 +598,7 @@ void CBTTask::ble_advertise_data()
         return;
     }
     ESP_LOGD(TAG, "Data advertisement started");
+#endif
 }
 
 void CBTTask::ble_on_sync_data()
@@ -608,8 +714,8 @@ void CBTTask::ble_host_task(void *param)
 void CBTTask::run()
 {
 #ifndef CONFIG_FREERTOS_CHECK_STACKOVERFLOW_NONE
-	UBaseType_t m1 = uxTaskGetStackHighWaterMark2(nullptr);
-#endif 
+    UBaseType_t m1 = uxTaskGetStackHighWaterMark2(nullptr);
+#endif
     STaskMessage msg;
 
 #ifdef CONFIG_BLE_DATA_IBEACON
@@ -829,12 +935,12 @@ void CBTTask::run()
                 break;
             }
 #ifndef CONFIG_FREERTOS_CHECK_STACKOVERFLOW_NONE
-			UBaseType_t m2 = uxTaskGetStackHighWaterMark2(nullptr);
-			if (m2 != m1)
-			{
-				m1 = m2;
-				TDEC("free bttask stack", m2);
-			}
+            UBaseType_t m2 = uxTaskGetStackHighWaterMark2(nullptr);
+            if (m2 != m1)
+            {
+                m1 = m2;
+                TDEC("free bttask stack", m2);
+            }
 #endif
         }
     }
