@@ -358,6 +358,9 @@ void CBTTask::ble_advertise_beacon()
 
 int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
 {
+    // ESP_LOGI(TAG, "ble_server_gap_event; event=%d",
+    //     event->type);
+
     switch (event->type)
     {
     case BLE_GAP_EVENT_CONNECT:
@@ -370,7 +373,7 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         }
         else
         {
-            ESP_LOGD(TAG, "Connection established");
+            ESP_LOGI(TAG, "Connection established");
             CBTTask::Instance()->mConnect = true;
             if (CBTTask::Instance()->mOnConnect != nullptr)
                 CBTTask::Instance()->mOnConnect(true);
@@ -378,7 +381,7 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
-        ESP_LOGD(TAG, "disconnect; reason=%d", event->disconnect.reason);
+        ESP_LOGW(TAG, "disconnect; reason=%d", event->disconnect.reason);
         CBTTask::Instance()->mConnect = false;
         if (CBTTask::Instance()->mOnConnect != nullptr)
             CBTTask::Instance()->mOnConnect(false);
@@ -392,8 +395,8 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        MODLOG_DFLT(INFO, "advertise complete; reason=%d",
-                    event->adv_complete.reason);
+        ESP_LOGW(TAG, "advertise complete; reason=%d",
+                 event->adv_complete.reason);
         ble_advertise_data();
         return 0;
 
@@ -444,7 +447,6 @@ void CBTTask::ble_advertise_data()
     rc = ble_hs_id_gen_rnd(1, &addr);
     assert(rc == 0);
 
-
     /* For periodic we use instance with non-connectable advertising */
     memset(&params, 0, sizeof(params));
 
@@ -463,14 +465,14 @@ void CBTTask::ble_advertise_data()
 
     memset(&adv_fields, 0, sizeof(adv_fields));
 
-        /* Advertise two flags:
+    /* Advertise two flags:
      *     o Discoverability in forthcoming advertisement (general)
      *     o BLE-only (BR/EDR unsupported).
      */
     adv_fields.flags = BLE_HS_ADV_F_DISC_GEN |
-                   BLE_HS_ADV_F_BREDR_UNSUP;
+                       BLE_HS_ADV_F_BREDR_UNSUP;
 
-    const char* name = ble_svc_gap_device_name();
+    const char *name = ble_svc_gap_device_name();
     adv_fields.name = (const uint8_t *)name;
     adv_fields.name_len = strlen(name);
     adv_fields.name_is_complete = 1;
@@ -498,7 +500,7 @@ void CBTTask::ble_advertise_data()
 
     rc = ble_gap_ext_adv_set_data(instance, data);
     assert(rc == 0);
- 
+
     /* configure periodic advertising */
     memset(&pparams, 0, sizeof(pparams));
     pparams.include_tx_power = 1;
@@ -575,7 +577,7 @@ void CBTTask::ble_advertise_data()
     CBTTask::Instance()->lock();
     fields.mfg_data = CBTTask::Instance()->mManufacturerData;
     fields.mfg_data_len = CBTTask::Instance()->mManufacturerDataSize;
- 
+
     rc = ble_gap_adv_set_fields(&fields);
     CBTTask::Instance()->unlock();
     if (rc != 0)
