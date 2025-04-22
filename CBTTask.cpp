@@ -395,7 +395,7 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        ESP_LOGW(TAG, "advertise complete; reason=%d",
+        ESP_LOGD(TAG, "advertise complete; reason=%d",
                  event->adv_complete.reason);
         ble_advertise_data();
         return 0;
