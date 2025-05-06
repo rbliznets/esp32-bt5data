@@ -540,6 +540,11 @@ void CBTTask::ble_advertise_data()
     const char *name;
     int rc;
 
+    name = ble_svc_gap_device_name();
+    bool compact = (CBTTask::Instance()->mManufacturerDataSize + strlen(name)) > 16;
+    struct ble_hs_adv_fields scan_response_fields;
+    memset(&scan_response_fields, 0, sizeof scan_response_fields);
+
     /**
      *  Set the advertisement data included in our advertisements:
      *     o Flags (indicates advertisement type and other general info).
@@ -561,22 +566,51 @@ void CBTTask::ble_advertise_data()
      * stack fill this value automatically.  This is done by assigning the
      * special value BLE_HS_ADV_TX_PWR_LVL_AUTO.
      */
-    // fields.tx_pwr_lvl_is_present = 1;
-    // fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+    fields.tx_pwr_lvl_is_present = 1;
+    fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
-    name = ble_svc_gap_device_name();
     fields.name = (uint8_t *)name;
-    fields.name_len = strlen(name);
-    fields.name_is_complete = 1;
+    if(compact && (strlen(name) > 11))
+    {
+        fields.name_len = 11;
+        fields.name_is_complete = 0;
+
+        scan_response_fields.name = (uint8_t *)name;
+        scan_response_fields.name_len = strlen(name);
+        scan_response_fields.name_is_complete = 1;
+    }
+    else
+    {
+        fields.name_len = strlen(name);
+        fields.name_is_complete = 1;
+    }
 
     ble_uuid16_t t[1] = {BLE_UUID16_INIT(BLE_SVC_SPP_UUID16)};
     fields.uuids16 = t;
     fields.num_uuids16 = 1;
+#ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     fields.uuids16_is_complete = 1;
+#else
+    fields.uuids16_is_complete = 1;
+#endif
 
     CBTTask::Instance()->lock();
     fields.mfg_data = CBTTask::Instance()->mManufacturerData;
-    fields.mfg_data_len = CBTTask::Instance()->mManufacturerDataSize;
+    if(compact)
+    {
+        fields.mfg_data_len = 5;
+        scan_response_fields.mfg_data = CBTTask::Instance()->mManufacturerData;
+        scan_response_fields.name_len = CBTTask::Instance()->mManufacturerDataSize;
+        rc = ble_gap_adv_rsp_set_fields(&scan_response_fields);
+        if (rc != 0)
+        {
+            ESP_LOGE(TAG, "error setting response data; rc=%d", rc);
+        }
+    }
+    else
+    {
+        fields.mfg_data_len = CBTTask::Instance()->mManufacturerDataSize;
+    }
 
     rc = ble_gap_adv_set_fields(&fields);
     CBTTask::Instance()->unlock();
