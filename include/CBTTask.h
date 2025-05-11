@@ -123,7 +123,9 @@ protected:
 		Отключает Nimble
 	*/
 	void deinit_bt();
-
+#ifdef CONFIG_BT_NIMBLE_EXT_ADV
+	ble_addr_t mAddr={0,{0,0,0,0,0,0}};
+#endif
 #ifdef CONFIG_BLE_DATA_IBEACON
 	uint8_t mBeaconID[16];	   ///< Поле ID. Берется из nvs "beacon" (blob) или случайный.
 	uint16_t mBeaconMajor = 0; ///< Поле Major. Задается при инициализации режима.

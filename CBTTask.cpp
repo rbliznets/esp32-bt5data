@@ -359,7 +359,7 @@ void CBTTask::ble_advertise_beacon()
 int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
 {
     // ESP_LOGI(TAG, "ble_server_gap_event; event=%d",
-    //     event->type);
+    //          event->type);
 
     switch (event->type)
     {
@@ -388,64 +388,58 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         ble_advertise_data();
         return 0;
 
-    case BLE_GAP_EVENT_CONN_UPDATE:
-        /* The central has updated the connection parameters. */
-        // MODLOG_DFLT(INFO, "connection updated; status=%d\n",
-        //             event->conn_update.status);
-        return 0;
+    // case BLE_GAP_EVENT_CONN_UPDATE:
+    //     /* The central has updated the connection parameters. */
+    //     MODLOG_DFLT(INFO, "connection updated; status=%d\n",
+    //                 event->conn_update.status);
+    //     return 0;
 
-    case BLE_GAP_EVENT_ADV_COMPLETE:
-        ESP_LOGD(TAG, "advertise complete; reason=%d",
-                 event->adv_complete.reason);
-        ble_advertise_data();
-        return 0;
+#ifdef CONFIG_BT_NIMBLE_EXT_ADV
+    // case BLE_GAP_EVENT_ADV_COMPLETE:
+    //     ESP_LOGW(TAG, "advertise complete; reason=%d (%d)",
+    //              event->adv_complete.reason, event->adv_complete.conn_handle);
+    //     // ble_advertise_data();
+    //     return 0;
+#endif
 
-    case BLE_GAP_EVENT_MTU:
-        // MODLOG_DFLT(INFO, "mtu update event; conn_handle=%d cid=%d mtu=%d\n",
-        //             event->mtu.conn_handle,
-        //             event->mtu.channel_id,
-        //             event->mtu.value);
-        return 0;
+    // case BLE_GAP_EVENT_MTU:
+    //     MODLOG_DFLT(INFO, "mtu update event; conn_handle=%d cid=%d mtu=%d\n",
+    //                 event->mtu.conn_handle,
+    //                 event->mtu.channel_id,
+    //                 event->mtu.value);
+    //     return 0;
 
-    case BLE_GAP_EVENT_SUBSCRIBE:
-        // MODLOG_DFLT(INFO, "subscribe event; conn_handle=%d attr_handle=%d "
-        //                   "reason=%d prevn=%d curn=%d previ=%d curi=%d\n",
-        //             event->subscribe.conn_handle,
-        //             event->subscribe.attr_handle,
-        //             event->subscribe.reason,
-        //             event->subscribe.prev_notify,
-        //             event->subscribe.cur_notify,
-        //             event->subscribe.prev_indicate,
-        //             event->subscribe.cur_indicate);
-        return 0;
+    // case BLE_GAP_EVENT_SUBSCRIBE:
+    //     MODLOG_DFLT(INFO, "subscribe event; conn_handle=%d attr_handle=%d "
+    //                       "reason=%d prevn=%d curn=%d previ=%d curi=%d\n",
+    //                 event->subscribe.conn_handle,
+    //                 event->subscribe.attr_handle,
+    //                 event->subscribe.reason,
+    //                 event->subscribe.prev_notify,
+    //                 event->subscribe.cur_notify,
+    //                 event->subscribe.prev_indicate,
+    //                 event->subscribe.cur_indicate);
+    //     return 0;
 
     default:
         return 0;
     }
 }
 
-#ifdef CONFIG_BT_NIMBLE_EXT_ADV
-static uint8_t periodic_adv_raw_data[] = {'E', 'S', 'P', '_', 'P', 'E', 'R', 'I', 'O', 'D', 'I', 'C', '_', 'A', 'D', 'V'};
-#endif
-
 void CBTTask::ble_advertise_data()
 {
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
     int rc;
-    struct ble_gap_periodic_adv_params pparams;
     struct ble_gap_ext_adv_params params;
     struct ble_hs_adv_fields adv_fields;
     struct os_mbuf *data;
-    uint8_t instance = 1;
-    ble_addr_t addr;
-#ifdef BT_NIMBLE_ENABLE_PERIODIC_ADV
-    struct ble_gap_periodic_adv_enable_params eparams;
-    memset(&eparams, 0, sizeof(eparams));
-#endif
 
     /* set random (NRPA) address for instance */
-    rc = ble_hs_id_gen_rnd(1, &addr);
-    assert(rc == 0);
+    if (CBTTask::Instance()->mAddr.type == 0)
+    {
+        rc = ble_hs_id_gen_rnd(1, &(CBTTask::Instance()->mAddr));
+        assert(rc == 0);
+    }
 
     /* For periodic we use instance with non-connectable advertising */
     memset(&params, 0, sizeof(params));
@@ -454,13 +448,35 @@ void CBTTask::ble_advertise_data()
     params.own_addr_type = BLE_OWN_ADDR_RANDOM;
     params.primary_phy = BLE_HCI_LE_PHY_1M;
     params.secondary_phy = BLE_HCI_LE_PHY_2M;
-    params.sid = 2;
+    params.sid = 1;
+    // params.itvl_min = 300;
+    // params.itvl_max = 600;
+    params.connectable = 1;
+    // params.include_tx_power = 1;
+    // params.tx_power = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+
+    const char *name = ble_svc_gap_device_name();
+
+    CBTTask::Instance()->lock();
+    int size = (CBTTask::Instance()->mManufacturerDataSize + strlen(name));
+    // ESP_LOGI(TAG,"size %d",size);
+    if (size > 20)
+    {
+        data = os_msys_get_pkthdr(size+(BLE_HS_ADV_MAX_SZ-20), 0);
+    }
+    else
+    {
+        data = os_msys_get_pkthdr(BLE_HS_ADV_MAX_SZ, 0);
+        params.scannable = 1;
+        params.legacy_pdu = 1;
+    }
+    assert(data);
 
     /* configure instance 1 */
-    rc = ble_gap_ext_adv_configure(instance, &params, NULL, NULL, NULL);
+    rc = ble_gap_ext_adv_configure(1, &params, NULL, CBTTask::ble_server_gap_event, NULL);
     assert(rc == 0);
 
-    rc = ble_gap_ext_adv_set_addr(instance, &addr);
+    rc = ble_gap_ext_adv_set_addr(1, &(CBTTask::Instance()->mAddr));
     assert(rc == 0);
 
     memset(&adv_fields, 0, sizeof(adv_fields));
@@ -472,67 +488,32 @@ void CBTTask::ble_advertise_data()
     adv_fields.flags = BLE_HS_ADV_F_DISC_GEN |
                        BLE_HS_ADV_F_BREDR_UNSUP;
 
-    const char *name = ble_svc_gap_device_name();
     adv_fields.name = (const uint8_t *)name;
     adv_fields.name_len = strlen(name);
     adv_fields.name_is_complete = 1;
 
-    adv_fields.tx_pwr_lvl_is_present = 1;
-    adv_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+    // adv_fields.tx_pwr_lvl_is_present = 1;
+    // adv_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
     ble_uuid16_t t[1] = {BLE_UUID16_INIT(BLE_SVC_SPP_UUID16)};
     adv_fields.uuids16 = t;
     adv_fields.num_uuids16 = 1;
     adv_fields.uuids16_is_complete = 1;
 
-    CBTTask::Instance()->lock();
     adv_fields.mfg_data = CBTTask::Instance()->mManufacturerData;
     adv_fields.mfg_data_len = CBTTask::Instance()->mManufacturerDataSize;
 
-    /* Default to legacy PDUs size, mbuf chain will be increased if needed
-     */
-    data = os_msys_get_pkthdr(BLE_HCI_MAX_ADV_DATA_LEN, 0);
-    assert(data);
-
     rc = ble_hs_adv_set_fields_mbuf(&adv_fields, data);
-    assert(rc == 0);
     CBTTask::Instance()->unlock();
-
-    rc = ble_gap_ext_adv_set_data(instance, data);
+    // ESP_LOG_BUFFER_HEX("data", data->om_data, data->om_len);
     assert(rc == 0);
 
-    /* configure periodic advertising */
-    memset(&pparams, 0, sizeof(pparams));
-    pparams.include_tx_power = 1;
-    pparams.itvl_min = BLE_GAP_ADV_ITVL_MS(120);
-    pparams.itvl_max = BLE_GAP_ADV_ITVL_MS(240);
-
-//     rc = ble_gap_periodic_adv_configure(instance, &pparams);
-//     assert(rc == 0);
-
-//     data = os_msys_get_pkthdr(sizeof(periodic_adv_raw_data), 0);
-//     assert(data);
-
-//     rc = os_mbuf_append(data, periodic_adv_raw_data, sizeof(periodic_adv_raw_data));
-//     assert(rc == 0);
-// #ifdef BT_NIMBLE_ENABLE_PERIODIC_ADV
-//     rc = ble_gap_periodic_adv_set_data(instance, data, NULL);
-// #else
-//     rc = ble_gap_periodic_adv_set_data(instance, data);
-// #endif
-//     assert(rc == 0);
-
-/* start periodic advertising */
-#ifdef BT_NIMBLE_ENABLE_PERIODIC_ADV
-    eparams.include_adi = 1;
-    rc = ble_gap_periodic_adv_start(instance, &eparams);
-#else
-    rc = ble_gap_periodic_adv_start(instance);
-#endif
+    rc = ble_gap_ext_adv_set_data(1, data);
+    // ESP_LOGI(TAG, "rc=%d", rc);
     assert(rc == 0);
 
     /* start advertising */
-    rc = ble_gap_ext_adv_start(instance, 0, 0);
+    rc = ble_gap_ext_adv_start(1, 0, 0);
     assert(rc == 0);
 #else
     struct ble_gap_adv_params adv_params;
@@ -541,6 +522,7 @@ void CBTTask::ble_advertise_data()
     int rc;
 
     name = ble_svc_gap_device_name();
+    CBTTask::Instance()->lock();
     bool compact = (CBTTask::Instance()->mManufacturerDataSize + strlen(name)) > 16;
     struct ble_hs_adv_fields scan_response_fields;
     memset(&scan_response_fields, 0, sizeof scan_response_fields);
@@ -570,7 +552,7 @@ void CBTTask::ble_advertise_data()
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
     fields.name = (uint8_t *)name;
-    if(compact && (strlen(name) > 11))
+    if (compact && (strlen(name) > 11))
     {
         fields.name_len = 11;
         fields.name_is_complete = 0;
@@ -588,19 +570,15 @@ void CBTTask::ble_advertise_data()
     ble_uuid16_t t[1] = {BLE_UUID16_INIT(BLE_SVC_SPP_UUID16)};
     fields.uuids16 = t;
     fields.num_uuids16 = 1;
-#ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     fields.uuids16_is_complete = 1;
-#else
-    fields.uuids16_is_complete = 1;
-#endif
 
-    CBTTask::Instance()->lock();
     fields.mfg_data = CBTTask::Instance()->mManufacturerData;
-    if(compact)
+    if (compact)
     {
         fields.mfg_data_len = 5;
         scan_response_fields.mfg_data = CBTTask::Instance()->mManufacturerData;
         scan_response_fields.name_len = CBTTask::Instance()->mManufacturerDataSize;
+
         rc = ble_gap_adv_rsp_set_fields(&scan_response_fields);
         if (rc != 0)
         {
@@ -722,6 +700,7 @@ EBTMode CBTTask::init_bt(EBTMode mode)
     ble_store_config_init();
 
     nimble_port_freertos_init(ble_host_task);
+
     mMode = mode;
     return mMode;
 }
@@ -960,7 +939,11 @@ void CBTTask::run()
                 unlock();
                 if ((!mConnect) && (ble_hs_synced()))
                 {
+#ifdef CONFIG_BT_NIMBLE_EXT_ADV
+                    ble_gap_ext_adv_stop(1);
+#else
                     ble_gap_adv_stop();
+#endif
                     ble_advertise_data();
                 }
                 break;
