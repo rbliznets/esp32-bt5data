@@ -32,6 +32,7 @@
 #define MSG_INIT_BEACON_RX (11)
 #define MSG_BEACON_DATA (12)
 #define MSG_BEACON_TIMER (13)
+#define MSG_MAC_DATA (14)
 #endif
 #define MSG_INIT_DATA (2)	 ///< Команда инициализации режима потоковых каналов.
 #define MSG_OFF (3)			 ///< Команда отключения BT.
@@ -39,7 +40,7 @@
 #define MSG_READ_DATA (5)	 ///< Сообщение для чтения данных из основного канала.
 #define MSG_SET_ADV_DATA (6) ///< Установить данные для поля Manufacturer specific data в advertizing.
 
-#define MSG_INIT_DATA3 (15)	 ///< Команда установки callback функции на соединение.
+#define MSG_INIT_DATA3 (15) ///< Команда установки callback функции на соединение.
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 #define MSG_READ_DATA2 (16)	 ///< Сообщение для чтения данных из второго канала.
 #define MSG_INIT_DATA2 (17)	 ///< Команда установки callback функции на прием данных из второго канала.
@@ -77,13 +78,19 @@ struct SBeacon
 	int8_t rssi;
 };
 
+struct SMac
+{
+	uint8_t mac[6];
+	int8_t rssi;
+};
+
 /// Функция события приема данных.
 /*!
  * \param[in] data данные.
  * \param[in] size размер данных.
  */
 typedef void onBLEDataRx(uint8_t *data, size_t size);
-typedef void onBeaconRx(SBeacon *data);
+typedef void onBeaconRx(SBeacon *data, SMac *mac);
 typedef void onBLEConnect(bool connected);
 
 /// Класс логики работы канала данных по BLE.
@@ -107,7 +114,7 @@ protected:
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 	onBLEDataRx *mOnRx2 = nullptr; ///< Callback функция события приема данных на втором канале.
 #endif
-	onBLEConnect* mOnConnect = nullptr; ///< Callback функция события соединения.
+	onBLEConnect *mOnConnect = nullptr; ///< Callback функция события соединения.
 
 	uint8_t own_addr_type; ///< Тип адреса BLE.
 
@@ -124,7 +131,7 @@ protected:
 	*/
 	void deinit_bt();
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
-	ble_addr_t mAddr={0,{0,0,0,0,0,0}};
+	ble_addr_t mAddr = {0, {0, 0, 0, 0, 0, 0}};
 #endif
 #ifdef CONFIG_BLE_DATA_IBEACON
 	uint8_t mBeaconID[16];	   ///< Поле ID. Берется из nvs "beacon" (blob) или случайный.
@@ -147,9 +154,13 @@ protected:
 	static void ble_advertise_beacon();
 	/// Установка случайного адреса (iBeacon).
 	static void ble_app_set_addr();
+
+	uint8_t *mWhiteList = nullptr;
+	uint16_t mWhiteListSize = 0;
+
 #endif
-	uint8_t* mManufacturerData = nullptr;
-	uint8_t	mManufacturerDataSize = 0;
+	uint8_t *mManufacturerData = nullptr;
+	uint8_t mManufacturerDataSize = 0;
 
 	/// Запуск Nimble.
 	/*!
@@ -194,7 +205,7 @@ protected:
 	using CBaseTask::sendCmd;
 
 public:
-	static const char* device_name;
+	static const char *device_name;
 
 	/// Единственный экземпляр класса.
 	/*!
@@ -220,6 +231,11 @@ public:
 	{
 		return sendCmd(MSG_INIT_BEACON_RX, sleep, (uint32_t)onBeacon);
 	};
+	inline void setWhiteList(uint8_t *data, uint16_t size)
+	{
+		mWhiteList = data;
+		mWhiteListSize = size;
+	};
 #endif
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 	/// Включить режим каналов данных.
@@ -228,7 +244,7 @@ public:
 	  \param[in] onRx2 callback на прием данных второго канала.
 	  \return true если без ошибки.
 	*/
-	inline bool setData(onBLEDataRx *onRx, onBLEDataRx *onRx2, onBLEConnect* onConnect = nullptr)
+	inline bool setData(onBLEDataRx *onRx, onBLEDataRx *onRx2, onBLEConnect *onConnect = nullptr)
 	{
 		sendCmd(MSG_INIT_DATA3, 0, (uint32_t)onConnect);
 		sendCmd(MSG_INIT_DATA2, 0, (uint32_t)onRx2);
@@ -249,7 +265,7 @@ public:
 	  \param[in] onRx callback на прием данных основного канала.
 	  \return true если без ошибки.
 	*/
-	inline bool setData(onBLEDataRx *onRx, onBLEConnect* onConnect = nullptr)
+	inline bool setData(onBLEDataRx *onRx, onBLEConnect *onConnect = nullptr)
 	{
 		sendCmd(MSG_INIT_DATA3, 0, (uint32_t)onConnect);
 		return sendCmd(MSG_INIT_DATA, 0, (uint32_t)onRx);
@@ -263,7 +279,7 @@ public:
 	  \return true если без ошибки.
 	*/
 	bool sendData(uint8_t *data, size_t size, TickType_t xTicksToWait = portMAX_DELAY);
-	
+
 	/// Установить данные для advertizing.
 	/*!
 	  \param[in] data данные.

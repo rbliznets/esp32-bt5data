@@ -202,7 +202,6 @@ void CBTTask::ble_on_sync_rx()
 void CBTTask::ble_scan()
 {
     uint8_t own_addr_type;
-    struct ble_gap_disc_params disc_params;
     int rc;
 
     /* Figure out address to use while advertising (no privacy for now) */
@@ -213,6 +212,20 @@ void CBTTask::ble_scan()
         return;
     }
 
+#ifdef CONFIG_BT_NIMBLE_EXT_ADV
+    struct ble_gap_ext_disc_params disc_params;
+    disc_params.passive = 1;
+
+    /* Use defaults for the rest of the parameters. */
+    disc_params.itvl = 0;   // BLE_GAP_SCAN_ITVL_MS(600);
+    disc_params.window = 0; // BLE_GAP_SCAN_ITVL_MS(300);
+
+    rc = ble_gap_ext_disc(own_addr_type, 0, 0, 1, 0, 0,
+                          &disc_params, &disc_params, ble_rx_gap_event, NULL);
+    assert(rc == 0);
+
+#else
+    struct ble_gap_disc_params disc_params;
     /* Tell the controller to filter duplicates; we don't want to process
      * repeated advertisements from the same device.
      */
@@ -236,6 +249,7 @@ void CBTTask::ble_scan()
     {
         ESP_LOGE(TAG, "Error initiating GAP discovery procedure; rc=%d", rc);
     }
+#endif
 }
 
 /**
@@ -258,44 +272,85 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
     int rc;
     STaskMessage msg;
     SBeacon *beacon;
+    SMac *mac;
+
+    // ESP_LOGI(TAG, "event %d", event->type);
 
     switch (event->type)
     {
-    case BLE_GAP_EVENT_DISC:
-        if (event->disc.event_type == BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND)
-        {
-            rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
-                                         event->disc.length_data);
-            if (rc != 0)
-            {
-                return 0;
-            }
-            // MODLOG_DFLT(INFO, "DISC %d (%d)", event->disc.event_type, event->disc.rssi);
-            if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
-            {
-                // TRACEDATA("bt", (uint8_t *)fields.mfg_data, fields.mfg_data_len);
-                beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
-                std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);
-                beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256;
-                beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256;
-                beacon->power = fields.mfg_data[24];
-                beacon->rssi = event->disc.rssi;
-                CBTTask::Instance()->sendMessage(&msg, 100, true);
-            }
-        }
-        return 0;
 
     case BLE_GAP_EVENT_DISC_COMPLETE:
         // MODLOG_DFLT(INFO, "discovery complete; reason=%d\n",
         //             event->disc_complete.reason);
         return 0;
 
-#if CONFIG_EXAMPLE_EXTENDED_ADV
+#ifdef CONFIG_BT_NIMBLE_EXT_ADV
     case BLE_GAP_EVENT_EXT_DISC:
-        /* An advertisment report was received during GAP discovery. */
-        ext_print_adv_report(&event->disc);
-
-        ble_cts_cent_connect_if_interesting(&event->disc);
+        if (event->ext_disc.legacy_event_type == BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND)
+        {
+            rc = ble_hs_adv_parse_fields(&fields, event->ext_disc.data,
+                                         event->ext_disc.length_data);
+            if (rc == 0)
+            {
+                if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
+                {
+                    beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
+                    std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);
+                    beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256;
+                    beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256;
+                    beacon->power = fields.mfg_data[24];
+                    beacon->rssi = event->ext_disc.rssi;
+                    CBTTask::Instance()->sendMessage(&msg, 10, true);
+                    return 0;
+                }
+            }
+        }
+        if (event->ext_disc.addr.type == BLE_ADDR_PUBLIC)
+        {
+            mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
+            std::memcpy(mac->mac, event->ext_disc.addr.val, 6);
+            CBTTask::Instance()->sendMessage(&msg, 10, true);
+            mac->rssi = event->ext_disc.rssi;
+            // ESP_LOG_BUFFER_HEX(TAG, event->ext_disc.addr.val, 6);
+        }
+        // ESP_LOGW(TAG, "DISC %d (%d)", event->ext_disc.length_data, event->ext_disc.props);
+        // ESP_LOG_BUFFER_HEX(TAG,event->ext_disc.data,event->ext_disc.length_data);
+        // rc = ble_hs_adv_parse_fields(&fields, event->ext_disc.data,
+        //                                  event->ext_disc.length_data);
+        // if(fields.name_len != 0)
+        // {
+        //     ESP_LOGE(TAG,"%s",fields.name);
+        // }
+        return 0;
+#else
+    case BLE_GAP_EVENT_DISC:
+        if (event->disc.event_type == BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND)
+        {
+            rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
+                                         event->disc.length_data);
+            if (rc == 0)
+            {
+                if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
+                {
+                    beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
+                    std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);
+                    beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256;
+                    beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256;
+                    beacon->power = fields.mfg_data[24];
+                    beacon->rssi = event->disc.rssi;
+                    CBTTask::Instance()->sendMessage(&msg, 100, true);
+                    return 0;
+                }
+            }
+        }
+        if (event->disc.addr.type == BLE_ADDR_PUBLIC)
+        {
+            mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
+            std::memcpy(mac->mac, event->disc.addr.val, 6);
+            CBTTask::Instance()->sendMessage(&msg, 10, true);
+            mac->rssi = event->disc.rssi;
+            // ESP_LOG_BUFFER_HEX(TAG, event->disc.addr.val, 6);
+        }
         return 0;
 #endif
 
@@ -388,38 +443,38 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         ble_advertise_data();
         return 0;
 
-    // case BLE_GAP_EVENT_CONN_UPDATE:
-    //     /* The central has updated the connection parameters. */
-    //     MODLOG_DFLT(INFO, "connection updated; status=%d\n",
-    //                 event->conn_update.status);
-    //     return 0;
+        // case BLE_GAP_EVENT_CONN_UPDATE:
+        //     /* The central has updated the connection parameters. */
+        //     MODLOG_DFLT(INFO, "connection updated; status=%d\n",
+        //                 event->conn_update.status);
+        //     return 0;
 
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
-    // case BLE_GAP_EVENT_ADV_COMPLETE:
-    //     ESP_LOGW(TAG, "advertise complete; reason=%d (%d)",
-    //              event->adv_complete.reason, event->adv_complete.conn_handle);
-    //     // ble_advertise_data();
-    //     return 0;
+        // case BLE_GAP_EVENT_ADV_COMPLETE:
+        //     ESP_LOGW(TAG, "advertise complete; reason=%d (%d)",
+        //              event->adv_complete.reason, event->adv_complete.conn_handle);
+        //     // ble_advertise_data();
+        //     return 0;
 #endif
 
-    // case BLE_GAP_EVENT_MTU:
-    //     MODLOG_DFLT(INFO, "mtu update event; conn_handle=%d cid=%d mtu=%d\n",
-    //                 event->mtu.conn_handle,
-    //                 event->mtu.channel_id,
-    //                 event->mtu.value);
-    //     return 0;
+        // case BLE_GAP_EVENT_MTU:
+        //     MODLOG_DFLT(INFO, "mtu update event; conn_handle=%d cid=%d mtu=%d\n",
+        //                 event->mtu.conn_handle,
+        //                 event->mtu.channel_id,
+        //                 event->mtu.value);
+        //     return 0;
 
-    // case BLE_GAP_EVENT_SUBSCRIBE:
-    //     MODLOG_DFLT(INFO, "subscribe event; conn_handle=%d attr_handle=%d "
-    //                       "reason=%d prevn=%d curn=%d previ=%d curi=%d\n",
-    //                 event->subscribe.conn_handle,
-    //                 event->subscribe.attr_handle,
-    //                 event->subscribe.reason,
-    //                 event->subscribe.prev_notify,
-    //                 event->subscribe.cur_notify,
-    //                 event->subscribe.prev_indicate,
-    //                 event->subscribe.cur_indicate);
-    //     return 0;
+        // case BLE_GAP_EVENT_SUBSCRIBE:
+        //     MODLOG_DFLT(INFO, "subscribe event; conn_handle=%d attr_handle=%d "
+        //                       "reason=%d prevn=%d curn=%d previ=%d curi=%d\n",
+        //                 event->subscribe.conn_handle,
+        //                 event->subscribe.attr_handle,
+        //                 event->subscribe.reason,
+        //                 event->subscribe.prev_notify,
+        //                 event->subscribe.cur_notify,
+        //                 event->subscribe.prev_indicate,
+        //                 event->subscribe.cur_indicate);
+        //     return 0;
 
     default:
         return 0;
@@ -462,7 +517,7 @@ void CBTTask::ble_advertise_data()
     // ESP_LOGI(TAG,"size %d",size);
     if (size > 20)
     {
-        data = os_msys_get_pkthdr(size+(BLE_HS_ADV_MAX_SZ-20), 0);
+        data = os_msys_get_pkthdr(size + (BLE_HS_ADV_MAX_SZ - 20), 0);
     }
     else
     {
@@ -781,34 +836,47 @@ void CBTTask::run()
                 deinit_bt();
                 mOnBeacon = (onBeaconRx *)msg.msgBody;
                 mBeaconSleepTime = msg.shortParam * 1000;
-                if (mOnBeacon != nullptr)
-                    mOnBeacon(nullptr);
                 init_bt(EBTMode::iBeaconRx);
                 if (mBeaconTimer == nullptr)
                 {
                     mBeaconTimer = new CSoftwareTimer(0, MSG_BEACON_TIMER);
                 }
-                mBeaconTimer->start(this, ETimerEvent::SendBack, 1000);
+                mBeaconTimer->start(this, ETimerEvent::SendBack, 1500);
                 mBeaconSleep = false;
                 break;
             case MSG_BEACON_DATA:
                 if (mOnBeacon != nullptr)
-                    mOnBeacon((SBeacon *)msg.msgBody);
+                    mOnBeacon((SBeacon *)msg.msgBody, nullptr);
                 else
                 {
                     TRACEDATA("beacon", (uint8_t *)msg.msgBody, msg.shortParam);
                 }
                 vPortFree(msg.msgBody);
-                // if(mBeaconTimer != nullptr)
-                // {
-                //     if(mMode == EBTMode::iBeaconRx)
-                //     {
-                //         deinit_bt();
-                //         // TDEC("sleep",mBeaconSleepTime);
-                //         mBeaconTimer->start(this, ETimerEvent::SendBack,mBeaconSleepTime);
-                //         mBeaconSleep=true;
-                //     }
-                // }
+                break;
+            case MSG_MAC_DATA:
+                if (mOnBeacon != nullptr)
+                {
+                    if (mWhiteListSize > 0)
+                    {
+                        for (n = 0; n < mWhiteListSize; n++)
+                        {
+                            if (std::memcmp(((SMac *)msg.msgBody)->mac, &mWhiteList[6 * n], 6) == 0)
+                            {
+                                mOnBeacon(nullptr, (SMac *)msg.msgBody);
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        mOnBeacon(nullptr, (SMac *)msg.msgBody);
+                    }
+                }
+                else
+                {
+                    TRACEDATA("mac", (uint8_t *)msg.msgBody, msg.shortParam);
+                }
+                vPortFree(msg.msgBody);
                 break;
             case MSG_BEACON_TIMER:
                 if (mBeaconTimer != nullptr)
@@ -818,16 +886,14 @@ void CBTTask::run()
                         if (mMode == EBTMode::Off)
                         {
                             init_bt(EBTMode::iBeaconRx);
-                            // TDEC("rx",1000);
-                            if (mOnBeacon != nullptr)
-                                mOnBeacon(nullptr);
-                            mBeaconTimer->start(this, ETimerEvent::SendBack, 1000);
+                            mBeaconTimer->start(this, ETimerEvent::SendBack, 1500);
                         }
                     }
                     else if (mMode == EBTMode::iBeaconRx)
                     {
                         deinit_bt();
-                        // TDEC("sleep",mBeaconSleepTime);
+                        if (mOnBeacon != nullptr)
+                            mOnBeacon(nullptr, nullptr);
                         mBeaconTimer->start(this, ETimerEvent::SendBack, mBeaconSleepTime);
                     }
                     mBeaconSleep = !mBeaconSleep;
@@ -937,7 +1003,7 @@ void CBTTask::run()
                 mManufacturerData = (uint8_t *)msg.msgBody;
                 mManufacturerDataSize = msg.shortParam;
                 unlock();
-                if ((!mConnect) && (ble_hs_synced()))
+                if ((mMode == EBTMode::Data) && (!mConnect) && (ble_hs_synced()))
                 {
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
                     ble_gap_ext_adv_stop(1);
@@ -964,14 +1030,13 @@ void CBTTask::run()
         }
     }
 endTask:
+    deinit_bt();
     if (mManufacturerData != nullptr)
         vPortFree(mManufacturerData);
-    deinit_bt();
 #ifdef CONFIG_BLE_DATA_IBEACON
     if (mBeaconTimer != nullptr)
     {
         delete mBeaconTimer;
-        mBeaconTimer = nullptr;
     }
 #endif
 }
