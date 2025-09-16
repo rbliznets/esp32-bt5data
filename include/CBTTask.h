@@ -19,6 +19,7 @@
 
 #include "host/ble_uuid.h"
 #include "host/ble_gatt.h"
+#include <array>
 
 #ifdef CONFIG_ESP_TASK_WDT
 #define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS((CONFIG_ESP_TASK_WDT_TIMEOUT_S - 1) * 1000 + 500)
@@ -71,17 +72,25 @@ enum class EBTMode
 
 struct SBeacon
 {
-	uint8_t uuid[16];
+	std::array<uint8_t, 16> uuid;
 	uint16_t major;
 	uint16_t minor;
 	int8_t power;
 	int8_t rssi;
+
+	bool operator==(const SBeacon& other) const {
+            return this->uuid == other.uuid;
+        }
 };
 
 struct SMac
 {
-	uint8_t mac[6];
+	std::array<uint8_t, 6> mac;
 	int8_t rssi;
+
+	bool operator==(const SMac& other) const {
+            return this->mac == other.mac;
+        }
 };
 
 /// Функция события приема данных.
@@ -155,9 +164,6 @@ protected:
 	/// Установка случайного адреса (iBeacon).
 	static void ble_app_set_addr();
 
-	uint8_t *mWhiteList = nullptr;
-	uint16_t mWhiteListSize = 0;
-
 #endif
 	uint8_t *mManufacturerData = nullptr;
 	uint8_t mManufacturerDataSize = 0;
@@ -230,11 +236,6 @@ public:
 	inline bool setBeacon(onBeaconRx *onBeacon, uint16_t sleep = 5)
 	{
 		return sendCmd(MSG_INIT_BEACON_RX, sleep, (uint32_t)onBeacon);
-	};
-	inline void setWhiteList(uint8_t *data, uint16_t size)
-	{
-		mWhiteList = data;
-		mWhiteListSize = size;
 	};
 #endif
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL

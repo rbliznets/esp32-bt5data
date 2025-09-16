@@ -25,10 +25,6 @@
 #include "nvs.h"
 #include "esp_random.h"
 
-/////@@@@@@@@@@@@@@@@@@@
-// #undef max
-// #undef min
-////////////////////////////////
 #include "CTrace.h"
 #include <cstring>
 
@@ -333,7 +329,7 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
                 if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
                 {
                     beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
-                    std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);
+                    std::memcpy(beacon->uuid.data(), &fields.mfg_data[4], 16);
                     beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256;
                     beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256;
                     beacon->power = fields.mfg_data[24];
@@ -346,7 +342,7 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
         if (event->disc.addr.type == BLE_ADDR_PUBLIC)
         {
             mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
-            std::memcpy(mac->mac, event->disc.addr.val, 6);
+            std::memcpy(mac->mac.data(), event->disc.addr.val, 6);
             CBTTask::Instance()->sendMessage(&msg, 10, true);
             mac->rssi = event->disc.rssi;
             // ESP_LOG_BUFFER_HEX(TAG, event->disc.addr.val, 6);
@@ -850,33 +846,19 @@ void CBTTask::run()
                 else
                 {
                     TRACEDATA("beacon", (uint8_t *)msg.msgBody, msg.shortParam);
+                    vPortFree(msg.msgBody);
                 }
-                vPortFree(msg.msgBody);
                 break;
             case MSG_MAC_DATA:
                 if (mOnBeacon != nullptr)
                 {
-                    if (mWhiteListSize > 0)
-                    {
-                        for (n = 0; n < mWhiteListSize; n++)
-                        {
-                            if (std::memcmp(((SMac *)msg.msgBody)->mac, &mWhiteList[6 * n], 6) == 0)
-                            {
-                                mOnBeacon(nullptr, (SMac *)msg.msgBody);
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        mOnBeacon(nullptr, (SMac *)msg.msgBody);
-                    }
+                    mOnBeacon(nullptr, (SMac *)msg.msgBody);
                 }
                 else
                 {
                     TRACEDATA("mac", (uint8_t *)msg.msgBody, msg.shortParam);
+                    vPortFree(msg.msgBody);
                 }
-                vPortFree(msg.msgBody);
                 break;
             case MSG_BEACON_TIMER:
                 if (mBeaconTimer != nullptr)

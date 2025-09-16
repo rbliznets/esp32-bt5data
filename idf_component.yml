@@ -1,4 +1,4 @@
-version: "0.1.0"
+version: "0.2.0"
 description: ble data channels 
 url: https://github.com/rbliznets/esp32-bt5data
 dependencies:
