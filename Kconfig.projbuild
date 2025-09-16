@@ -25,10 +25,24 @@ menu "BLE Data (NimBLE)"
         help
             Speed up data stream.
 
-    config BLE_DATA_IBEACON
-        bool "iBeacon enabled"
+    config BLE_DATA_IBEACON_SCAN
+        bool "BLE scan enabled"
         default n
         help
-            iBeacon code included.
+            BLE scan code included.
+
+    config BLE_DATA_IBEACON_SCAN_TIMER
+        depends on BLE_DATA_IBEACON_SCAN
+        int "Set scan time in ms."
+        range 1000 10000
+        default 1500
+        help
+            Set scan time in ms. 
+
+    config BLE_DATA_IBEACON_TX
+        bool "iBeacon tx enabled"
+        default n
+        help
+            iBeacon tx included.
                 
 endmenu

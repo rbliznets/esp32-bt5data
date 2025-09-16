@@ -2,7 +2,7 @@
     \file
     \brief Класс задачи под логику работы.
     \authors Близнец Р.А.(r.bliznets@gmail.com)
-    \version 0.1.0.0
+    \version 0.2.0.0
     \date 17.10.2023
 
     Один объект на приложение.
@@ -13,7 +13,6 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "host/ble_hs_mbuf.h"
 #include "host/ble_gap.h"
-// #include "host/ble_hs.h"
 
 #ifdef CONFIG_BT_NIMBLE_ENABLED
 #include "nimble/ble.h"
@@ -177,7 +176,7 @@ void CBTTask::ble_on_reset(int reason)
     ESP_LOGW(TAG, "Resetting state; reason=%d\n", reason);
 }
 
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
 void CBTTask::ble_on_sync_rx()
 {
     ESP_LOGD(TAG, "BLE rx");
@@ -354,7 +353,9 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
     }
 }
+#endif
 
+#ifdef CONFIG_BLE_DATA_IBEACON_TX
 void CBTTask::ble_on_sync_beacon()
 {
     ESP_LOGD(TAG, "BLE sync beacon");
@@ -727,10 +728,12 @@ EBTMode CBTTask::init_bt(EBTMode mode)
 
     switch (mode)
     {
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_TX
     case EBTMode::iBeaconTx:
         ble_hs_cfg.sync_cb = ble_on_sync_beacon;
         break;
+#endif
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
     case EBTMode::iBeaconRx:
         ble_hs_cfg.sync_cb = ble_on_sync_rx;
         break;
@@ -784,7 +787,7 @@ void CBTTask::run()
 #endif
     STaskMessage msg;
 
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_TX
     nvs_handle_t nvs_handle;
     if (nvs_open("nvs", NVS_READWRITE, &nvs_handle) == ESP_OK)
     {
@@ -816,7 +819,7 @@ void CBTTask::run()
         {
             switch (msg.msgID)
             {
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_TX
             case MSG_INIT_BEACON_TX:
                 deinit_bt();
                 if (mBeaconTimer != nullptr)
@@ -828,6 +831,8 @@ void CBTTask::run()
                 mBeaconMinor = msg.paramID;
                 init_bt(EBTMode::iBeaconTx);
                 break;
+#endif
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
             case MSG_INIT_BEACON_RX:
                 deinit_bt();
                 mOnBeacon = (onBeaconRx *)msg.msgBody;
@@ -837,7 +842,7 @@ void CBTTask::run()
                 {
                     mBeaconTimer = new CSoftwareTimer(0, MSG_BEACON_TIMER);
                 }
-                mBeaconTimer->start(this, ETimerEvent::SendBack, 1500);
+                mBeaconTimer->start(this, ETimerEvent::SendBack, CONFIG_BLE_DATA_IBEACON_SCAN_TIMER);
                 mBeaconSleep = false;
                 break;
             case MSG_BEACON_DATA:
@@ -868,7 +873,7 @@ void CBTTask::run()
                         if (mMode == EBTMode::Off)
                         {
                             init_bt(EBTMode::iBeaconRx);
-                            mBeaconTimer->start(this, ETimerEvent::SendBack, 1500);
+                            mBeaconTimer->start(this, ETimerEvent::SendBack, CONFIG_BLE_DATA_IBEACON_SCAN_TIMER);
                         }
                     }
                     else if (mMode == EBTMode::iBeaconRx)
@@ -884,7 +889,7 @@ void CBTTask::run()
 #endif
             case MSG_INIT_DATA:
                 deinit_bt();
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
                 if (mBeaconTimer != nullptr)
                 {
                     delete mBeaconTimer;
@@ -899,7 +904,7 @@ void CBTTask::run()
                 break;
             case MSG_OFF:
                 deinit_bt();
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
                 if (mBeaconTimer != nullptr)
                 {
                     delete mBeaconTimer;
@@ -1015,7 +1020,7 @@ endTask:
     deinit_bt();
     if (mManufacturerData != nullptr)
         vPortFree(mManufacturerData);
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
     if (mBeaconTimer != nullptr)
     {
         delete mBeaconTimer;

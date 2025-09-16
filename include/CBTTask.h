@@ -2,7 +2,7 @@
 	\file
 	\brief Класс задачи под BT5 LE.
 	\authors Близнец Р.А.(r.bliznets@gmail.com)
-	\version 0.1.0.0
+	\version 0.2.0.0
 	\date 17.11.2023
 
 	Один объект на приложение.
@@ -28,8 +28,10 @@
 #endif
 
 #define MSG_END_TASK (0) ///< Команда завершения задачи.
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_TX
 #define MSG_INIT_BEACON_TX (10) ///< Команда инициализации режима iBeacon.
+#endif
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
 #define MSG_INIT_BEACON_RX (11)
 #define MSG_BEACON_DATA (12)
 #define MSG_BEACON_TIMER (13)
@@ -63,8 +65,10 @@
 enum class EBTMode
 {
 	Off, ///< Выключено.
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_TX
 	iBeaconTx, ///< iBeacon.
+#endif
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
 	iBeaconRx, ///< iBeacon.
 #endif
 	Data ///< Обмен данными.
@@ -142,12 +146,21 @@ protected:
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
 	ble_addr_t mAddr = {0, {0, 0, 0, 0, 0, 0}};
 #endif
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_TX
 	uint8_t mBeaconID[16];	   ///< Поле ID. Берется из nvs "beacon" (blob) или случайный.
 	uint16_t mBeaconMajor = 0; ///< Поле Major. Задается при инициализации режима.
 	uint16_t mBeaconMinor = 0; ///< Поле Minor. Задается при инициализации режима.
 	uint8_t mBeaconTx = 0;	   ///< Поле мощности на 1м. Берется из nvs "btx" (u8).
 
+	/// Stack sync callback (iBeacon).
+	static void ble_on_sync_beacon();
+	/// Begin advertising (iBeacon).
+	static void ble_advertise_beacon();
+	/// Установка случайного адреса (iBeacon).
+	static void ble_app_set_addr();
+#endif
+
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
 	onBeaconRx *mOnBeacon = nullptr; ///< Callback функция события приема данных от маяка.
 	uint32_t mBeaconSleepTime = 5000;
 	CSoftwareTimer *mBeaconTimer = nullptr;
@@ -156,15 +169,8 @@ protected:
 	static void ble_on_sync_rx();
 	static void ble_scan();
 	static int ble_rx_gap_event(struct ble_gap_event *event, void *arg);
-
-	/// Stack sync callback (iBeacon).
-	static void ble_on_sync_beacon();
-	/// Begin advertising (iBeacon).
-	static void ble_advertise_beacon();
-	/// Установка случайного адреса (iBeacon).
-	static void ble_app_set_addr();
-
 #endif
+
 	uint8_t *mManufacturerData = nullptr;
 	uint8_t mManufacturerDataSize = 0;
 
@@ -222,7 +228,7 @@ public:
 	static void free();
 	static inline bool isRun() { return (theSingleInstance != nullptr); };
 
-#ifdef CONFIG_BLE_DATA_IBEACON
+#ifdef CONFIG_BLE_DATA_IBEACON_TX
 	/// Включить режим iBeacon.
 	/*!
 	  \param[in] major поле major.
@@ -233,6 +239,8 @@ public:
 	{
 		return sendCmd(MSG_INIT_BEACON_TX, major, minor);
 	};
+#endif
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
 	inline bool setBeacon(onBeaconRx *onBeacon, uint16_t sleep = 5)
 	{
 		return sendCmd(MSG_INIT_BEACON_RX, sleep, (uint32_t)onBeacon);
