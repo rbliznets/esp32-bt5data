@@ -77,6 +77,8 @@ public:
      */
     bool calculate();
 
+    void clear();
+
     /**
      * @brief Получение сериализованных данных
      *

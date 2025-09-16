@@ -202,6 +202,7 @@ bool CMacStore::calculate()
  */
 void CMacStore::debug()
 {
+    ESP_LOGI(TAG, "== olds ==");
     // Выводим информацию о MAC адресах
     for (auto &var : *mOldMacs)
     {
@@ -271,4 +272,10 @@ uint8_t *CMacStore::getData(uint16_t &size)
     }
 
     return data;
+}
+
+void CMacStore::clear()
+{
+    mOldBeacons->clear();
+    mOldMacs->clear();
 }
