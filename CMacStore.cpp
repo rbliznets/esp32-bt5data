@@ -10,7 +10,9 @@
 #include <algorithm>
 #include "esp_log.h"
 
+#if CONFIG_LOG_DEFAULT_LEVEL > 2
 static const char *TAG = "CMacStore"; ///< Тег для логирования
+#endif
 
 /**
  * @brief Конструктор класса CMacStore

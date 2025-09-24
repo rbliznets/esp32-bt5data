@@ -900,9 +900,10 @@ void CBTTask::run()
 #endif
 
     struct os_mbuf *txom; // Буфер для передачи данных
-    int er, n;
+    int er;
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     bool skip = false; // Флаг пропуска передачи
+    int n;
 #endif
     for (;;)
     {
