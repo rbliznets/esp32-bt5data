@@ -1,7 +1,8 @@
-version: "0.2.0"
+version: "0.2.1"
 description: ble data channels 
 url: https://github.com/rbliznets/esp32-bt5data
 dependencies:
+  johboh/nlohmann-json: =*
   idf: ">=5.5.0"
 targets:
   - esp32s3

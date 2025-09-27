@@ -276,6 +276,88 @@ uint8_t *CMacStore::getData(uint16_t &size)
     return data;
 }
 
+json CMacStore::getJSON()
+{
+    json beacon = json::array();
+
+    for (auto &var : *mOldMacs)
+    {
+        json j;
+        std::string str = "";
+        char tmp[4];
+        for (auto &x : var.mac)
+        {
+            std::sprintf(tmp, "%02x", x);
+            str += tmp;
+        }
+        j["mac"] = str;
+        j["rssi"] = var.rssi;
+        beacon.push_back(j);
+    }
+
+    for (auto &var : *mOldBeacons)
+    {
+        json j;
+        std::string str = "";
+        char tmp[4];
+        for (auto &x : var.uuid)
+        {
+            std::sprintf(tmp, "%02x", x);
+            str += tmp;
+        }
+        j["uuid"] = str;
+        j["major"] = var.major;
+        j["minor"] = var.minor;
+        j["pwr"] = var.power;
+        j["rssi"] = var.rssi;
+        beacon.push_back(j);
+    }
+
+    return beacon;
+}
+
+json CMacStore::data2json(uint8_t *data)
+{
+    json beacon = json::array();
+    uint16_t szmac = data[1];
+    uint16_t szgbeacon = data[2];
+    uint16_t index = 3;
+    for (uint16_t i = 0; i < szmac; i++)
+    {
+        json j;
+        std::string str = "";
+        char tmp[4];
+        for (size_t i = 0; i < 6; i++)
+        {
+            std::sprintf(tmp, "%02x", data[index + i]);
+            str += tmp;
+        }
+        j["mac"] = str;
+        j["rssi"] = (int8_t)(data[index + 6]);
+        index += 7;
+        beacon.push_back(j);
+    }
+    for (uint16_t i = 0; i < szgbeacon; i++)
+    {
+        json j;
+        std::string str = "";
+        char tmp[4];
+        for (size_t i = 0; i < 16; i++)
+        {
+            std::sprintf(tmp, "%02x", data[index + i]);
+            str += tmp;
+        }
+        j["uuid"] = str;
+        j["major"] = (data[index + 16]) + (data[index + 17] << 8);
+        j["minor"] = (data[index + 18]) + (data[index + 19] << 8);
+        j["pwr"] = (int8_t)(data[index + 20]);
+        j["rssi"] = (int8_t)(data[index + 21]);
+        index += 22;
+        beacon.push_back(j);
+    }
+    return beacon;
+}
+
 void CMacStore::clear()
 {
     mOldBeacons->clear();

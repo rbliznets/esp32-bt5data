@@ -13,6 +13,9 @@
 
 #include "CBTTask.h"
 
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
 /**
  * @brief Класс для хранения и анализа данных BLE устройств
  *
@@ -88,6 +91,9 @@ public:
      * @return Указатель на буфер с данными (необходимо освободить delete[])
      */
     uint8_t *getData(uint16_t &size);
+
+    json getJSON();
+    static json data2json(uint8_t *data);
 
 #if CONFIG_LOG_DEFAULT_LEVEL > 2
     /**
