@@ -401,7 +401,7 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
             if (rc == 0)
             {
                 // Проверяем, является ли устройство iBeacon
-                if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
+                if ((fields.mfg_data_len == 25) && (fields.mfg_data[1] == 0x4c) && (fields.mfg_data[0] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
                 {
                     // Создаем сообщение с данными iBeacon
                     beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
@@ -410,7 +410,7 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
                     beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256; // Minor
                     beacon->power = fields.mfg_data[24];                             // Power
                     beacon->rssi = event->disc.rssi;                                 // RSSI
-                    CBTTask::Instance()->sendMessage(&msg, 100, true);               // Отправляем сообщение
+                    CBTTask::Instance()->sendMessage(&msg, 10, true);               // Отправляем сообщение
                     return 0;
                 }
             }

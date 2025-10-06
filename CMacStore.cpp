@@ -208,14 +208,14 @@ void CMacStore::debug()
     // Выводим информацию о MAC адресах
     for (auto &var : *mOldMacs)
     {
-        ESP_LOGI(TAG, "mac rssi:%d dBm", var.rssi);
+        ESP_LOGW(TAG, "mac rssi:%d dBm", var.rssi);
         ESP_LOG_BUFFER_HEX(TAG, var.mac.data(), 6);
     }
 
     // Выводим информацию о iBeacon
     for (auto &var : *mOldBeacons)
     {
-        ESP_LOGI(TAG, "iBeacon 0x%04X:0x%04X rssi:%d dBm, pwr: %d dBm", var.major, var.minor, var.rssi, var.power);
+        ESP_LOGE(TAG, "iBeacon 0x%04X:0x%04X rssi:%d dBm, pwr: %d dBm", var.major, var.minor, var.rssi, var.power);
         ESP_LOG_BUFFER_HEX(TAG, var.uuid.data(), 16);
     }
 }
