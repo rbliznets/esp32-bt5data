@@ -215,7 +215,7 @@ void CMacStore::debug()
     // Выводим информацию о iBeacon
     for (auto &var : *mOldBeacons)
     {
-        ESP_LOGE(TAG, "iBeacon 0x%04X:0x%04X rssi:%d dBm, pwr: %d dBm", var.major, var.minor, var.rssi, var.power);
+        ESP_LOGE(TAG, "iBeacon %d:%d rssi:%d dBm, pwr: %d dBm", var.major, var.minor, var.rssi, var.power);
         ESP_LOG_BUFFER_HEX(TAG, var.uuid.data(), 16);
     }
 }

@@ -95,7 +95,7 @@ struct SBeacon
 	 */
 	bool operator==(const SBeacon &other) const
 	{
-		return this->uuid == other.uuid;
+		return (this->uuid == other.uuid) && (this->major == other.major) && (this->minor == other.minor) && (this->rssi == other.rssi);
 	}
 };
 
@@ -225,6 +225,7 @@ protected:
 	uint32_t mBeaconSleepTime = 5000;		///< Время сна между сканированиями (мс)
 	CSoftwareTimer *mBeaconTimer = nullptr; ///< Таймер для управления сканированием
 	bool mBeaconSleep = false;				///< Флаг режима сна сканера
+	bool mBeaconFilter = true;
 
 	/**
 	 * @brief Callback синхронизации стека для режима iBeacon приемника
@@ -416,8 +417,9 @@ public:
 	 * @param[in] sleep Время сна между сканированиями в секундах
 	 * @return true если команда отправлена успешно
 	 */
-	inline bool setBeacon(onBeaconRx *onBeacon, uint16_t sleep = 5)
+	inline bool setBeacon(onBeaconRx *onBeacon, uint16_t sleep = 5, bool filter = true)
 	{
+		if(filter)sleep |= 0x80;
 		return sendCmd(MSG_INIT_BEACON_RX, sleep, (uint32_t)onBeacon);
 	};
 #endif

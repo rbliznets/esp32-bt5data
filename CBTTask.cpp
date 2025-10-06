@@ -393,15 +393,17 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
 #else
     case BLE_GAP_EVENT_DISC:
         // Стандартное обнаружение устройств
-        if (event->disc.event_type == BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND)
+        // ESP_LOGW(TAG,"rssi %d, type %d",event->disc.rssi, event->disc.event_type);
+        if (CBTTask::Instance()->mBeaconFilter)
         {
             // Парсим рекламные поля
             rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
                                          event->disc.length_data);
             if (rc == 0)
             {
+                // ESP_LOG_BUFFER_HEX("mfg", fields.mfg_data, fields.mfg_data_len);
                 // Проверяем, является ли устройство iBeacon
-                if ((fields.mfg_data_len == 25) && (fields.mfg_data[1] == 0x4c) && (fields.mfg_data[0] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
+                if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
                 {
                     // Создаем сообщение с данными iBeacon
                     beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
@@ -418,11 +420,12 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
         // Обработка MAC адресов публичных устройств
         if (event->disc.addr.type == BLE_ADDR_PUBLIC)
         {
+            // ESP_LOG_BUFFER_HEX("mac", event->disc.addr.val, 6);
             mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
             std::memcpy(mac->mac.data(), event->disc.addr.val, 6); // Копируем MAC
             CBTTask::Instance()->sendMessage(&msg, 10, true);
             mac->rssi = event->disc.rssi; // RSSI
-        }
+       }
         return 0;
 #endif
 
@@ -929,7 +932,8 @@ void CBTTask::run()
             case MSG_INIT_BEACON_RX:
                 deinit_bt();
                 mOnBeacon = (onBeaconRx *)msg.msgBody;
-                mBeaconSleepTime = msg.shortParam * 1000;
+                mBeaconSleepTime = (msg.shortParam & 0x7f) * 1000;
+                mBeaconFilter = (msg.shortParam & 0x80) != 0;
                 init_bt(EBTMode::iBeaconRx);
                 if (mBeaconTimer == nullptr)
                 {
