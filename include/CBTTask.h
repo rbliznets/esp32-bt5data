@@ -1,11 +1,11 @@
 /*!
 	\file
-	\brief Класс задачи под BT5 LE.
-	\authors Близнец Р.А.(r.bliznets@gmail.com)
-	\version 0.2.0.0
+	\brief Task class for BT5 LE.
+	\authors Bliznets R.A.(r.bliznets@gmail.com)
+	\version 1.0.0.0
 	\date 17.11.2023
 
-	Один объект на приложение.
+	One object per application.
 */
 
 #pragma once
@@ -21,77 +21,70 @@
 #include "host/ble_gatt.h"
 #include <array>
 
-#ifdef CONFIG_ESP_TASK_WDT
-#define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS((CONFIG_ESP_TASK_WDT_TIMEOUT_S - 1) * 1000 + 500)
-#else
-#define TASK_MAX_BLOCK_TIME portMAX_DELAY
-#endif
-
-#define MSG_END_TASK (0) ///< Команда завершения задачи.
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
-#define MSG_INIT_BEACON_TX (10) ///< Команда инициализации режима iBeacon.
+#define MSG_INIT_BEACON_TX (10) ///< Initialize iBeacon mode command.
 #endif
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
-#define MSG_INIT_BEACON_RX (11) ///< Команда инициализации режима сканирования iBeacon.
-#define MSG_BEACON_DATA (12)	///< Сообщение с данными iBeacon.
-#define MSG_BEACON_TIMER (13)	///< Сообщение таймера iBeacon.
-#define MSG_MAC_DATA (14)		///< Сообщение с MAC адресом устройства.
+#define MSG_INIT_BEACON_RX (11) ///< Initialize iBeacon scanning mode command.
+#define MSG_BEACON_DATA (12)	///< Message with iBeacon data.
+#define MSG_BEACON_TIMER (13)	///< iBeacon timer message.
+#define MSG_MAC_DATA (14)		///< Message with device MAC address.
 #endif
-#define MSG_INIT_DATA (2)	 ///< Команда инициализации режима потоковых каналов.
-#define MSG_OFF (3)			 ///< Команда отключения BT.
-#define MSG_WRITE_DATA (4)	 ///< Сообщение для записи данных в основной канал.
-#define MSG_READ_DATA (5)	 ///< Сообщение для чтения данных из основного канала.
-#define MSG_SET_ADV_DATA (6) ///< Установить данные для поля Manufacturer specific data в advertizing.
+#define MSG_INIT_DATA (2)	 ///< Initialize streaming channels mode command.
+#define MSG_OFF (3)			 ///< Turn off BT command.
+#define MSG_WRITE_DATA (4)	 ///< Message to write data to the main channel.
+#define MSG_READ_DATA (5)	 ///< Message to read data from the main channel.
+#define MSG_SET_ADV_DATA (6) ///< Set data for the Manufacturer specific data field in advertising.
 
-#define MSG_INIT_DATA3 (15) ///< Команда установки callback функции на соединение.
+#define MSG_INIT_DATA3 (15) ///< Set callback function for connection command.
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
-#define MSG_READ_DATA2 (16)	 ///< Сообщение для чтения данных из второго канала.
-#define MSG_INIT_DATA2 (17)	 ///< Команда установки callback функции на прием данных из второго канала.
-#define MSG_WRITE_DATA2 (18) ///< Сообщение для записи данных во второй канал.
-#define MSG_SKIP_WRITE (19)	 ///< Команда отмены записи во второй канал.
+#define MSG_READ_DATA2 (16)	 ///< Message to read data from the second channel.
+#define MSG_INIT_DATA2 (17)	 ///< Set callback function for receiving data from the second channel command.
+#define MSG_WRITE_DATA2 (18) ///< Message to write data to the second channel.
+#define MSG_SKIP_WRITE (19)	 ///< Cancel write to the second channel command.
 #endif
 
-#define BTTASK_NAME "bt"			///< Имя задачи для отладки.
-#define BTTASK_STACKSIZE (4 * 1024) ///< Размер стека задачи.
-#define BTTASK_PRIOR (2)			///< Приоритет задачи.
-#define BTTASK_LENGTH (30)			///< Длина приемной очереди задачи.
+#define BTTASK_NAME "bt"			///< Task name for debugging.
+#define BTTASK_STACKSIZE (4 * 1024) ///< Task stack size.
+#define BTTASK_PRIOR (2)			///< Task priority.
+#define BTTASK_LENGTH (30)			///< Task receive queue length.
 #ifdef CONFIG_BLE_DATA_TASK0
-#define BTTASK_CPU (0) ///< Номер ядра процессора.
+#define BTTASK_CPU (0) ///< CPU core number.
 #else
-#define BTTASK_CPU (1) ///< Номер ядра процессора.
+#define BTTASK_CPU (1) ///< CPU core number.
 #endif
 
-/// Режимы работы BT.
+/// BT operation modes.
 enum class EBTMode
 {
-	Off, ///< Выключено.
+	Off, ///< Off.
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
-	iBeaconTx, ///< Режим передатчика iBeacon.
+	iBeaconTx, ///< iBeacon transmitter mode.
 #endif
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
-	iBeaconRx, ///< Режим приемника iBeacon.
+	iBeaconRx, ///< iBeacon receiver mode.
 #endif
-	Data ///< Режим обмена данными.
+	Data ///< Data exchange mode.
 };
 
 /**
- * @brief Структура данных iBeacon
+ * @brief iBeacon data structure
  *
- * Содержит информацию о маяке iBeacon, включая UUID, major, minor номера,
- * мощность сигнала и уровень принимаемого сигнала (RSSI).
+ * Contains information about an iBeacon, including UUID, major, minor numbers,
+ * signal power, and received signal strength indicator (RSSI).
  */
 struct SBeacon
 {
-	std::array<uint8_t, 16> uuid; ///< Уникальный идентификатор маяка (16 байт)
-	uint16_t major;				  ///< Major номер (группа маяков)
-	uint16_t minor;				  ///< Minor номер (конкретный маяк в группе)
-	int8_t power;				  ///< Мощность передатчика на расстоянии 1 метр
-	int8_t rssi;				  ///< Уровень принимаемого сигнала
+	std::array<uint8_t, 16> uuid; ///< Beacon's unique identifier (16 bytes)
+	uint16_t major;				  ///< Major number (beacon group)
+	uint16_t minor;				  ///< Minor number (specific beacon in the group)
+	int8_t power;				  ///< Transmitter power at 1 meter distance
+	int8_t rssi;				  ///< Received signal strength indicator
 
 	/**
-	 * @brief Оператор сравнения двух маяков
-	 * @param other Второй маяк для сравнения
-	 * @return true если UUID совпадают, false в противном случае
+	 * @brief Operator to compare two beacons
+	 * @param other Second beacon for comparison
+	 * @return true if UUIDs match, false otherwise
 	 */
 	bool operator==(const SBeacon &other) const
 	{
@@ -100,19 +93,19 @@ struct SBeacon
 };
 
 /**
- * @brief Структура MAC адреса Bluetooth устройства
+ * @brief Bluetooth device MAC address structure
  *
- * Содержит MAC адрес устройства и уровень принимаемого сигнала.
+ * Contains the device's MAC address and received signal strength.
  */
 struct SMac
 {
-	std::array<uint8_t, 6> mac; ///< MAC адрес устройства (6 байт)
-	int8_t rssi;				///< Уровень принимаемого сигнала
+	std::array<uint8_t, 6> mac; ///< Device MAC address (6 bytes)
+	int8_t rssi;				///< Received signal strength
 
 	/**
-	 * @brief Оператор сравнения двух MAC адресов
-	 * @param other Второй MAC адрес для сравнения
-	 * @return true если MAC адреса совпадают, false в противном случае
+	 * @brief Operator to compare two MAC addresses
+	 * @param other Second MAC address for comparison
+	 * @return true if MAC addresses match, false otherwise
 	 */
 	bool operator==(const SMac &other) const
 	{
@@ -120,143 +113,143 @@ struct SMac
 	}
 };
 
-/// Функция события приема данных.
+/// Data reception event function.
 /*!
- * \param[in] data данные.
- * \param[in] size размер данных.
+ * \param[in] data data.
+ * \param[in] size data size.
  */
 typedef void onBLEDataRx(uint8_t *data, size_t size);
 
 /**
- * @brief Callback функция для обработки данных от iBeacon
+ * @brief Callback function for processing iBeacon data
  *
- * Вызывается при обнаружении iBeacon или MAC адреса Bluetooth устройства.
+ * Called when an iBeacon or a Bluetooth device MAC address is detected.
  *
- * @param[in] data Указатель на структуру данных iBeacon (может быть nullptr)
- * @param[in] mac Указатель на структуру MAC адреса (может быть nullptr)
+ * @param[in] data Pointer to the iBeacon data structure (can be nullptr)
+ * @param[in] mac Pointer to the MAC address structure (can be nullptr)
  */
 typedef void onBeaconRx(SBeacon *data, SMac *mac);
 
 /**
- * @brief Callback функция для обработки событий соединения
+ * @brief Callback function for processing connection events
  *
- * Вызывается при установке или разрыве соединения Bluetooth.
+ * Called when a Bluetooth connection is established or disconnected.
  *
- * @param[in] connected true если соединение установлено, false если разорвано
+ * @param[in] connected true if the connection is established, false if disconnected
  */
 typedef void onBLEConnect(bool connected);
 
-/// Класс логики работы канала данных по BLE.
+/// BLE data channel logic class.
 class CBTTask : public CBaseTask, CLock
 {
 private:
-	static CBTTask *theSingleInstance;	///< Единственный объект.
-	static const ble_uuid16_t svs_uuid; ///< UUID сервиса.
-	static const ble_uuid16_t chr_uuid; ///< UUID основного канала.
+	static CBTTask *theSingleInstance;	///< The single object.
+	static const ble_uuid16_t svs_uuid; ///< Service UUID.
+	static const ble_uuid16_t chr_uuid; ///< Main channel UUID.
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
-	static const ble_uuid16_t chr_uuid2; ///< UUID второго канала.
+	static const ble_uuid16_t chr_uuid2; ///< Second channel UUID.
 #endif
 
-	static const struct ble_gatt_svc_def gatt_svr_svcs[]; ///< Настройка сервиса.
-	static const struct ble_gatt_chr_def gatt_svr_chrs[]; ///< Настройка характеристик сервиса.
+	static const struct ble_gatt_svc_def gatt_svr_svcs[]; ///< Service configuration.
+	static const struct ble_gatt_chr_def gatt_svr_chrs[]; ///< Service characteristics configuration.
 
 protected:
-	EBTMode mMode = EBTMode::Off; ///< Текущий режим работы.
-	bool mConnect = false;		  ///< Флаг соединения.
-	onBLEDataRx *mOnRx = nullptr; ///< Callback функция события приема данных на основном канале.
+	EBTMode mMode = EBTMode::Off; ///< Current operation mode.
+	bool mConnect = false;		  ///< Connection flag.
+	onBLEDataRx *mOnRx = nullptr; ///< Callback function for receiving data on the main channel.
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
-	onBLEDataRx *mOnRx2 = nullptr; ///< Callback функция события приема данных на втором канале.
+	onBLEDataRx *mOnRx2 = nullptr; ///< Callback function for receiving data on the second channel.
 #endif
-	onBLEConnect *mOnConnect = nullptr; ///< Callback функция события соединения.
+	onBLEConnect *mOnConnect = nullptr; ///< Callback function for connection events.
 
-	uint8_t own_addr_type; ///< Тип адреса BLE.
+	uint8_t own_addr_type; ///< BLE address type.
 
-	/// Установить режим работы.
+	/// Set operation mode.
 	/*!
-		Инициализирует Nimble
-	  \param[in] mode режим работы.
-	  \return текущий режим работы
+		Initializes Nimble
+	  \param[in] mode operation mode.
+	  \return current operation mode
 	*/
 	EBTMode init_bt(EBTMode mode);
 
-	/// Выключить.
+	/// Turn off.
 	/*!
-		Отключает Nimble
+		Disables Nimble
 	*/
 	void deinit_bt();
 
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
-	ble_addr_t mAddr = {0, {0, 0, 0, 0, 0, 0}}; ///< Адрес устройства для расширенной рекламы
+	ble_addr_t mAddr = {0, {0, 0, 0, 0, 0, 0}}; ///< Address for extended advertising
 #endif
 
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
-	uint8_t mBeaconID[16];	   ///< Поле ID. Берется из nvs "beacon" (blob) или случайный.
-	uint16_t mBeaconMajor = 0; ///< Поле Major. Задается при инициализации режима.
-	uint16_t mBeaconMinor = 0; ///< Поле Minor. Задается при инициализации режима.
-	uint8_t mBeaconTx = 0;	   ///< Поле мощности на 1м. Берется из nvs "btx" (u8).
+	uint8_t mBeaconID[16];	   ///< ID field. Retrieved from nvs "beacon" (blob) or random.
+	uint16_t mBeaconMajor = 0; ///< Major field. Set during mode initialization.
+	uint16_t mBeaconMinor = 0; ///< Minor field. Set during mode initialization.
+	uint8_t mBeaconTx = 0;	   ///< Power at 1m field. Retrieved from nvs "btx" (u8).
 
 	/// Stack sync callback (iBeacon).
 	/*!
-	 * @brief Callback синхронизации стека для режима iBeacon передатчика
+	 * @brief Stack synchronization callback for iBeacon transmitter mode
 	 *
-	 * Вызывается при синхронизации стека BLE в режиме передатчика iBeacon.
+	 * Called when the BLE stack synchronizes in iBeacon transmitter mode.
 	 */
 	static void ble_on_sync_beacon();
 
 	/// Begin advertising (iBeacon).
 	/*!
-	 * @brief Начало рекламы в режиме iBeacon
+	 * @brief Start advertising in iBeacon mode
 	 *
-	 * Запускает передачу рекламных пакетов в формате iBeacon.
+	 * Starts transmitting advertisement packets in iBeacon format.
 	 */
 	static void ble_advertise_beacon();
 
-	/// Установка случайного адреса (iBeacon).
+	/// Set random address (iBeacon).
 	/*!
-	 * @brief Установка случайного адреса устройства для iBeacon
+	 * @brief Set random device address for iBeacon
 	 *
-	 * Генерирует и устанавливает случайный неразрешаемый частный адрес.
+	 * Generates and sets a random non-resolvable private address.
 	 */
 	static void ble_app_set_addr();
 #endif
 
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
-	onBeaconRx *mOnBeacon = nullptr;		///< Callback функция события приема данных от маяка.
-	uint32_t mBeaconSleepTime = 5000;		///< Время сна между сканированиями (мс)
-	CSoftwareTimer *mBeaconTimer = nullptr; ///< Таймер для управления сканированием
-	bool mBeaconSleep = false;				///< Флаг режима сна сканера
+	onBeaconRx *mOnBeacon = nullptr;		///< Callback function for receiving beacon data.
+	uint32_t mBeaconSleepTime = 5000;		///< Sleep time between scans (ms)
+	CSoftwareTimer *mBeaconTimer = nullptr; ///< Timer for controlling scanning
+	bool mBeaconSleep = false;				///< Scanner sleep mode flag
 	bool mBeaconFilter = true;
 
 	/**
-	 * @brief Callback синхронизации стека для режима iBeacon приемника
+	 * @brief Stack synchronization callback for iBeacon receiver mode
 	 *
-	 * Вызывается при синхронизации стека BLE в режиме приемника iBeacon.
+	 * Called when the BLE stack synchronizes in iBeacon receiver mode.
 	 */
 	static void ble_on_sync_rx();
 
 	/**
-	 * @brief Запуск сканирования BLE устройств
+	 * @brief Start scanning for BLE devices
 	 *
-	 * Инициирует процесс сканирования окружающих BLE устройств.
+	 * Initiates the process of scanning for nearby BLE devices.
 	 */
 	static void ble_scan();
 
 	/**
-	 * @brief Обработчик событий GAP для сканирования
+	 * @brief GAP event handler for scanning
 	 *
-	 * Обрабатывает события обнаружения BLE устройств и iBeacon маяков.
+	 * Processes events for discovered BLE devices and iBeacon beacons.
 	 *
-	 * @param[in] event Указатель на структуру события GAP
-	 * @param[in] arg Дополнительные аргументы (не используются)
-	 * @return Код возврата (0 при успешной обработке)
+	 * @param[in] event Pointer to the GAP event structure
+	 * @param[in] arg Additional arguments (unused)
+	 * @return Return code (0 on successful processing)
 	 */
 	static int ble_rx_gap_event(struct ble_gap_event *event, void *arg);
 #endif
 
-	uint8_t *mManufacturerData = nullptr; ///< Данные производителя для рекламы
-	uint8_t mManufacturerDataSize = 0;	  ///< Размер данных производителя
+	uint8_t *mManufacturerData = nullptr; ///< Manufacturer data for advertising
+	uint8_t mManufacturerDataSize = 0;	  ///< Size of manufacturer data
 
-	/// Запуск Nimble.
+	/// Start Nimble.
 	/*!
 	  \param[in] param Nimble.
 	*/
@@ -270,138 +263,138 @@ protected:
 
 	/// Stack sync callback.
 	/*!
-	 * @brief Callback синхронизации стека для режима передачи данных
+	 * @brief Stack synchronization callback for data transmission mode
 	 *
-	 * Вызывается при синхронизации стека BLE в режиме передачи данных.
+	 * Called when the BLE stack synchronizes in data transmission mode.
 	 */
 	static void ble_on_sync_data();
 
 	/// Begin advertising.
 	/*!
-	 * @brief Начало рекламы в режиме передачи данных
+	 * @brief Start advertising in data transmission mode
 	 *
-	 * Запускает передачу рекламных пакетов в режиме передачи данных.
+	 * Starts transmitting advertisement packets in data transmission mode.
 	 */
 	static void ble_advertise_data();
 
-	/// Callback от GAP.
+	/// GAP callback.
 	/*!
-	 * @brief Обработчик событий GAP для сервера данных
+	 * @brief GAP event handler for the data server
 	 *
-	 * Обрабатывает события подключения, отключения и других событий GAP.
+	 * Processes connection, disconnection, and other GAP events.
 	 *
-	 * @param[in] event Указатель на структуру события GAP
-	 * @param[in] arg Дополнительные аргументы (не используются)
-	 * @return Код возврата (0 при успешной обработке)
+	 * @param[in] event Pointer to the GAP event structure
+	 * @param[in] arg Additional arguments (unused)
+	 * @return Return code (0 on successful processing)
 	 */
 	static int ble_server_gap_event(struct ble_gap_event *event, void *arg);
 
-	/// Инициализация сервиса.
+	/// Initialize service.
 	/*!
-	 * @brief Инициализация GATT сервиса для передачи данных
+	 * @brief Initialize the GATT service for data transmission
 	 *
-	 * Регистрирует пользовательский GATT сервис и его характеристики.
+	 * Registers the custom GATT service and its characteristics.
 	 *
-	 * @return Код возврата (0 при успешной инициализации)
+	 * @return Return code (0 on successful initialization)
 	 */
 	static int gatt_svr_init();
 
-	/// Callback function для сервиса основного канала.
+	/// Callback function for the main channel service.
 	/*!
-	 * @brief Обработчик доступа к характеристике основного канала
+	 * @brief Main channel characteristic access handler
 	 *
-	 * Обрабатывает операции чтения/записи для основного канала данных.
+	 * Handles read/write operations for the main data channel.
 	 *
-	 * @param[in] conn_handle Идентификатор соединения
-	 * @param[in] attr_handle Идентификатор атрибута
-	 * @param[in] ctxt Контекст доступа к GATT
-	 * @param[in] arg Дополнительные аргументы
-	 * @return Код возврата (0 при успешной обработке)
+	 * @param[in] conn_handle Connection identifier
+	 * @param[in] attr_handle Attribute identifier
+	 * @param[in] ctxt GATT access context
+	 * @param[in] arg Additional arguments
+	 * @return Return code (0 on successful processing)
 	 */
 	static int ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
-	/// Callback function для сервиса второго канала.
+	/// Callback function for the second channel service.
 	/*!
-	 * @brief Обработчик доступа к характеристике второго канала
+	 * @brief Second channel characteristic access handler
 	 *
-	 * Обрабатывает операции чтения/записи для второго канала данных.
+	 * Handles read/write operations for the second data channel.
 	 *
-	 * @param[in] conn_handle Идентификатор соединения
-	 * @param[in] attr_handle Идентификатор атрибута
-	 * @param[in] ctxt Контекст доступа к GATT
-	 * @param[in] arg Дополнительные аргументы
-	 * @return Код возврата (0 при успешной обработке)
+	 * @param[in] conn_handle Connection identifier
+	 * @param[in] attr_handle Attribute identifier
+	 * @param[in] ctxt GATT access context
+	 * @param[in] arg Additional arguments
+	 * @return Return code (0 on successful processing)
 	 */
 	static int ble_svc_gatt_handler2(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg);
 #endif
 
-	/// Callback function для чтения данных из канала.
+	/// Callback function for reading data from the channel.
 	/*!
-	  \param[in] om данные.
-	  \param[in] chn номер канала.
-	  \return 0 если без ошибки.
+	  \param[in] om data.
+	  \param[in] chn channel number.
+	  \return 0 if no error.
 	*/
 	static int gatt_svr_chr_write(struct os_mbuf *om, uint16_t chn = 1);
 
-	/// Конструктор.
+	/// Constructor.
 	/*!
-	 * @brief Конструктор класса CBTTask
+	 * @brief CBTTask class constructor
 	 *
-	 * Создает новый экземпляр класса Bluetooth задачи.
+	 * Creates a new instance of the Bluetooth task class.
 	 */
 	CBTTask();
 
-	/// Деструктор.
+	/// Destructor.
 	/*!
-	 * @brief Деструктор класса CBTTask
+	 * @brief CBTTask class destructor
 	 *
-	 * Освобождает ресурсы, используемые задачей Bluetooth.
+	 * Frees resources used by the Bluetooth task.
 	 */
 	virtual ~CBTTask();
 
-	/// Функция задачи.
+	/// Task function.
 	/*!
-	 * @brief Основная функция выполнения задачи Bluetooth
+	 * @brief Main function for executing the Bluetooth task
 	 *
-	 * Обрабатывает все сообщения и события Bluetooth в цикле задачи.
+	 * Processes all Bluetooth messages and events in the task loop.
 	 */
 	virtual void run() override;
 
 	using CBaseTask::sendCmd;
 
 public:
-	static const char *device_name; ///< Имя устройства Bluetooth
+	static const char *device_name; ///< Bluetooth device name
 
-	inline EBTMode getMode(){return mMode;};
+	inline EBTMode getMode() { return mMode; };
 
-	/// Единственный экземпляр класса.
+	/// The single class instance.
 	/*!
-	  \return Указатель на CBTTask
+	  \return Pointer to CBTTask
 	*/
 	static CBTTask *Instance();
 
-	/// Освобождение ресурсов.
+	/// Free resources.
 	/*!
-	 * @brief Освобождение ресурсов и удаление экземпляра класса
+	 * @brief Free resources and delete the class instance
 	 *
-	 * Завершает задачу Bluetooth и освобождает все связанные ресурсы.
+	 * Terminates the Bluetooth task and frees all associated resources.
 	 */
 	static void free();
 
 	/**
-	 * @brief Проверка, запущена ли задача Bluetooth
+	 * @brief Check if the Bluetooth task is running
 	 *
-	 * @return true если задача запущена, false если нет
+	 * @return true if the task is running, false otherwise
 	 */
 	static inline bool isRun() { return (theSingleInstance != nullptr); };
 
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
-	/// Включить режим iBeacon.
+	/// Enable iBeacon mode.
 	/*!
-	  \param[in] major поле major.
-	  \param[in] minor поле minor.
-	  \return true если без ошибки.
+	  \param[in] major major field.
+	  \param[in] minor minor field.
+	  \return true if no error.
 	*/
 	inline bool setBeacon(uint16_t major, uint16_t minor)
 	{
@@ -411,25 +404,26 @@ public:
 
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
 	/**
-	 * @brief Установка режима сканирования iBeacon
+	 * @brief Set iBeacon scanning mode
 	 *
-	 * @param[in] onBeacon Callback функция для обработки обнаруженных маяков
-	 * @param[in] sleep Время сна между сканированиями в секундах
-	 * @return true если команда отправлена успешно
+	 * @param[in] onBeacon Callback function for processing detected beacons
+	 * @param[in] sleep Sleep time between scans in seconds
+	 * @return true if the command is sent successfully
 	 */
 	inline bool setBeacon(onBeaconRx *onBeacon, uint16_t sleep = 5, bool filter = true)
 	{
-		if(filter)sleep |= 0x80;
+		if (filter)
+			sleep |= 0x80;
 		return sendCmd(MSG_INIT_BEACON_RX, sleep, (uint32_t)onBeacon);
 	};
 #endif
 
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
-	/// Включить режим каналов данных.
+	/// Enable data channels mode.
 	/*!
-	  \param[in] onRx callback на прием данных основного канала.
-	  \param[in] onRx2 callback на прием данных второго канала.
-	  \return true если без ошибки.
+	  \param[in] onRx callback for receiving data on the main channel.
+	  \param[in] onRx2 callback for receiving data on the second channel.
+	  \return true if no error.
 	*/
 	inline bool setData(onBLEDataRx *onRx, onBLEDataRx *onRx2, onBLEConnect *onConnect = nullptr)
 	{
@@ -438,20 +432,20 @@ public:
 		return sendCmd(MSG_INIT_DATA, 0, (uint32_t)onRx);
 	};
 
-	/// Посылка данных во второй канал.
+	/// Send data to the second channel.
 	/*!
-	  \param[in] data данные.
-	  \param[in] size размер данных.
-	  \param[in] index номер пакета данных.
-	  \param[in] xTicksToWait время таймаута очереди сообщений.
-	  \return true если без ошибки.
+	  \param[in] data data.
+	  \param[in] size data size.
+	  \param[in] index data packet number.
+	  \param[in] xTicksToWait message queue timeout time.
+	  \return true if no error.
 	*/
 	bool sendData2(uint8_t *data, size_t size, uint16_t index, TickType_t xTicksToWait = portMAX_DELAY);
 #else
-	/// Включить режим канала данных.
+	/// Enable data channel mode.
 	/*!
-	  \param[in] onRx callback на прием данных основного канала.
-	  \return true если без ошибки.
+	  \param[in] onRx callback for receiving data on the main channel.
+	  \return true if no error.
 	*/
 	inline bool setData(onBLEDataRx *onRx, onBLEConnect *onConnect = nullptr)
 	{
@@ -460,21 +454,21 @@ public:
 	};
 #endif
 
-	/// Посылка данных в основной канал.
+	/// Send data to the main channel.
 	/*!
-	  \param[in] data данные.
-	  \param[in] size размер данных.
-	  \param[in] xTicksToWait время таймаута очереди сообщений.
-	  \return true если без ошибки.
+	  \param[in] data data.
+	  \param[in] size data size.
+	  \param[in] xTicksToWait message queue timeout time.
+	  \return true if no error.
 	*/
 	bool sendData(uint8_t *data, size_t size, TickType_t xTicksToWait = portMAX_DELAY);
 
-	/// Установить данные для advertizing.
+	/// Set data for advertising.
 	/*!
-	  \param[in] data данные.
-	  \param[in] size размер данных.
-	  \param[in] xTicksToWait время таймаута очереди сообщений.
-	  \return true если без ошибки.
+	  \param[in] data data.
+	  \param[in] size data size.
+	  \param[in] xTicksToWait message queue timeout time.
+	  \return true if no error.
 	*/
 	bool setManufacturerData(uint8_t *data, size_t size, TickType_t xTicksToWait = portMAX_DELAY);
 };

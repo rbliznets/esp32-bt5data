@@ -1,7 +1,10 @@
-version: "0.2.1"
-description: ble data channels 
+version: "1.0.0"
+description: ble data channels with scanning mode
 url: https://github.com/rbliznets/esp32-bt5data
 dependencies:
+  task:
+    version: "main"
+    git: https://github.com/rbliznets/esp32-task.git
   johboh/nlohmann-json: =*
   idf: ">=5.5.0"
 targets:

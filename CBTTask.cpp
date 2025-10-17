@@ -1,11 +1,11 @@
 /*!
     \file
-    \brief Класс задачи под логику работы.
-    \authors Близнец Р.А.(r.bliznets@gmail.com)
-    \version 0.2.0.0
+    \brief Task class for Bluetooth logic.
+    \authors Bliznets R.A.(r.bliznets@gmail.com)
+    \version 1.0.0.0
     \date 17.10.2023
 
-    Один объект на приложение.
+    One object per application.
 */
 
 #include "CBTTask.h"
@@ -27,9 +27,15 @@
 #include "CTrace.h"
 #include <cstring>
 
+#ifdef CONFIG_ESP_TASK_WDT
+#define TASK_MAX_BLOCK_TIME pdMS_TO_TICKS((CONFIG_ESP_TASK_WDT_TIMEOUT_S - 1) * 1000 + 500)
+#else
+#define TASK_MAX_BLOCK_TIME portMAX_DELAY
+#endif
+
 extern "C" void ble_store_config_init(void);
 
-// Хендл для чтения значения характеристики SPP сервиса
+// Handle for reading the value of the SPP service characteristic
 static uint16_t ble_spp_svc_gatt_read_val_handle = 0x30;
 
 /* 16 Bit SPP Service UUID */
@@ -37,97 +43,96 @@ static uint16_t ble_spp_svc_gatt_read_val_handle = 0x30;
 /* 16 Bit SPP Service Characteristic UUID */
 #define BLE_SVC_SPP_CHR_UUID16 0xABF1
 
-// Определение UUID для SPP сервиса и характеристики
 const ble_uuid16_t CBTTask::svs_uuid = BLE_UUID16_INIT(BLE_SVC_SPP_UUID16);
 const ble_uuid16_t CBTTask::chr_uuid = BLE_UUID16_INIT(BLE_SVC_SPP_CHR_UUID16);
 
-// Второй канал данных (если включен в конфигурации)
+// Second data channel (if enabled in configuration)
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 const ble_uuid16_t CBTTask::chr_uuid2 = BLE_UUID16_INIT(BLE_SVC_SPP_CHR_UUID16 + 1);
 static uint16_t ble_spp_svc_gatt_read_val_handle2 = 0x31;
 #endif
 
-// Определение характеристик GATT сервиса
+// Definition of GATT service characteristics
 const struct ble_gatt_chr_def CBTTask::gatt_svr_chrs[] = {
     {
-        /* Поддержка SPP сервиса */
+        /* SPP service support */
         .uuid = (ble_uuid_t *)&chr_uuid,
-        .access_cb = ble_svc_gatt_handler,                     // Callback для обработки доступа к характеристике
-        .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY, // Разрешена запись и уведомления
-        .val_handle = &ble_spp_svc_gatt_read_val_handle,       // Указатель на хендл значения
+        .access_cb = ble_svc_gatt_handler,                     // Callback for handling characteristic access
+        .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY, // Write and notify allowed
+        .val_handle = &ble_spp_svc_gatt_read_val_handle,       // Pointer to the value handle
     },
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     {
         .uuid = (ble_uuid_t *)&chr_uuid2,
-        .access_cb = ble_svc_gatt_handler2, // Callback для второго канала
+        .access_cb = ble_svc_gatt_handler2, // Callback for second channel
         .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
         .val_handle = &ble_spp_svc_gatt_read_val_handle2,
     },
 #endif
     {
-        0, /* Больше характеристик в этом сервисе нет */
+        0, /* No more characteristics in this service */
     }};
 
-// Определение GATT сервиса
+// Definition of GATT service
 const struct ble_gatt_svc_def CBTTask::gatt_svr_svcs[] = {
     {
-        .type = BLE_GATT_SVC_TYPE_PRIMARY, // Первичный сервис
-        .uuid = (ble_uuid_t *)&svs_uuid,   // UUID сервиса
-        .characteristics = gatt_svr_chrs   // Массив характеристик
+        .type = BLE_GATT_SVC_TYPE_PRIMARY, // Primary service
+        .uuid = (ble_uuid_t *)&svs_uuid,   // Service UUID
+        .characteristics = gatt_svr_chrs   // Array of characteristics
     },
     {
-        0, /* Больше сервисов нет */
+        0, /* No more services */
     }};
 
-static const char *TAG = "BTTask"; // Тег для логирования
+static const char *TAG = "BTTask"; // Tag for logging
 
-const char *CBTTask::device_name = CONFIG_BLE_DATA_DEVICE_NAME; // Имя устройства из конфигурации
+const char *CBTTask::device_name = CONFIG_BLE_DATA_DEVICE_NAME; // Device name from configuration
 
 /**
- * @brief Обработчик записи в характеристику GATT
- * @param om Указатель на буфер с данными
- * @param chn Номер канала (1 или 2)
- * @return Код ошибки BLE
+ * @brief GATT characteristic write handler
+ * @param om Pointer to the data buffer
+ * @param chn Channel number (1 or 2)
+ * @return BLE error code
  */
 int CBTTask::gatt_svr_chr_write(struct os_mbuf *om, uint16_t chn)
 {
-    uint16_t om_len;  // Длина полученных данных
-    int rc;           // Код возврата
-    STaskMessage msg; // Сообщение для отправки в задачу
+    uint16_t om_len;  // Length of received data
+    int rc;           // Return code
+    STaskMessage msg; // Message to send to the task
 
-    om_len = OS_MBUF_PKTLEN(om); // Получаем длину пакета
+    om_len = OS_MBUF_PKTLEN(om); // Get the packet length
     if (om_len < 1)
     {
-        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN; // Ошибка: пустой пакет
+        return BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN; // Error: empty packet
     }
 
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
-    // Определяем тип сообщения в зависимости от канала
+    // Determine message type based on channel
     if (chn == 2)
-        allocNewMsg(&msg, MSG_READ_DATA2, om_len, true); // Второй канал
+        allocNewMsg(&msg, MSG_READ_DATA2, om_len, true); // Second channel
     else
 #endif
-        allocNewMsg(&msg, MSG_READ_DATA, om_len, true); // Первый канал
+        allocNewMsg(&msg, MSG_READ_DATA, om_len, true); // First channel
 
-    // Копируем данные из буфера BLE в наше сообщение
+    // Copy data from the BLE buffer to our message
     rc = ble_hs_mbuf_to_flat(om, msg.msgBody, om_len, nullptr);
     if (rc != 0)
     {
-        return BLE_ATT_ERR_UNLIKELY; // Ошибка копирования
+        return BLE_ATT_ERR_UNLIKELY; // Copy error
     }
 
-    // Отправляем сообщение в задачу Bluetooth
+    // Send message to the Bluetooth task
     CBTTask::Instance()->sendMessage(&msg, portMAX_DELAY, true);
     return 0;
 }
 
 /**
- * @brief Обработчик событий доступа к GATT характеристике (канал 1)
- * @param conn_handle Идентификатор соединения
- * @param attr_handle Идентификатор атрибута
- * @param ctxt Контекст доступа
- * @param arg Дополнительные аргументы
- * @return Код ошибки
+ * @brief GATT characteristic access event handler (channel 1)
+ * @param conn_handle Connection identifier
+ * @param attr_handle Attribute identifier
+ * @param ctxt Access context
+ * @param arg Additional arguments
+ * @return Error code
  */
 int CBTTask::ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
@@ -135,23 +140,23 @@ int CBTTask::ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, st
     switch (ctxt->op)
     {
     case BLE_GATT_ACCESS_OP_WRITE_CHR:
-        // Обработка операции записи в характеристику
+        // Handle write operation to the characteristic
         rc = gatt_svr_chr_write(ctxt->om);
         return rc;
     default:
-        return BLE_ATT_ERR_UNLIKELY; // Неизвестная операция
+        return BLE_ATT_ERR_UNLIKELY; // Unknown operation
     }
     return 0;
 }
 
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 /**
- * @brief Обработчик событий доступа к GATT характеристике (канал 2)
- * @param conn_handle Идентификатор соединения
- * @param attr_handle Идентификатор атрибута
- * @param ctxt Контекст доступа
- * @param arg Дополнительные аргументы
- * @return Код ошибки
+ * @brief GATT characteristic access event handler (channel 2)
+ * @param conn_handle Connection identifier
+ * @param attr_handle Attribute identifier
+ * @param ctxt Access context
+ * @param arg Additional arguments
+ * @return Error code
  */
 int CBTTask::ble_svc_gatt_handler2(uint16_t conn_handle, uint16_t attr_handle, struct ble_gatt_access_ctxt *ctxt, void *arg)
 {
@@ -159,45 +164,45 @@ int CBTTask::ble_svc_gatt_handler2(uint16_t conn_handle, uint16_t attr_handle, s
     switch (ctxt->op)
     {
     case BLE_GATT_ACCESS_OP_WRITE_CHR:
-        // Обработка операции записи во вторую характеристику
+        // Handle write operation to the second characteristic
         rc = gatt_svr_chr_write(ctxt->om, 2);
         return rc;
     default:
-        return BLE_ATT_ERR_UNLIKELY; // Неизвестная операция
+        return BLE_ATT_ERR_UNLIKELY; // Unknown operation
     }
     return 0;
 }
 #endif
 
-// Указатель на единственный экземпляр класса
+// Pointer to the single instance of the class
 CBTTask *CBTTask::theSingleInstance = nullptr;
 
 /**
- * @brief Получение единственного экземпляра класса (Singleton)
- * @return Указатель на экземпляр CBTTask
+ * @brief Get the single instance of the class (Singleton)
+ * @return Pointer to the CBTTask instance
  */
 CBTTask *CBTTask::Instance()
 {
     if (theSingleInstance == nullptr)
     {
-        // Создаем новый экземпляр, если он еще не существует
+        // Create a new instance if it doesn't exist yet
         theSingleInstance = new CBTTask();
-        // Инициализируем базовую задачу
+        // Initialize the base task
         theSingleInstance->CBaseTask::init(BTTASK_NAME, BTTASK_STACKSIZE, BTTASK_PRIOR, BTTASK_LENGTH, BTTASK_CPU);
     }
     return theSingleInstance;
 };
 
 /**
- * @brief Освобождение ресурсов и удаление экземпляра
+ * @brief Free resources and delete the instance
  */
 void CBTTask::free()
 {
     if (theSingleInstance != nullptr)
     {
-        // Отправляем команду на завершение задачи
+        // Send a command to terminate the task
         theSingleInstance->sendCmd(MSG_END_TASK);
-        // Ждем завершения задачи
+        // Wait for the task to finish
         do
         {
             vTaskDelay(1);
@@ -207,18 +212,18 @@ void CBTTask::free()
 #else
         while (theSingleInstance->mTaskQueue != nullptr);
 #endif
-        // Удаляем экземпляр
+        // Delete the instance
         delete theSingleInstance;
         theSingleInstance = nullptr;
     }
 }
 
 /**
- * @brief Конструктор класса
+ * @brief Constructor for the class
  */
 CBTTask::CBTTask() : CBaseTask(), CLock()
 {
-    // Инициализация членов класса значениями по умолчанию
+    // Initialize class members with default values
     mManufacturerData = nullptr;
     mManufacturerDataSize = 0;
     mMode = EBTMode::Off;
@@ -242,15 +247,15 @@ CBTTask::CBTTask() : CBaseTask(), CLock()
 }
 
 /**
- * @brief Деструктор класса
+ * @brief Destructor for the class
  */
 CBTTask::~CBTTask()
 {
 }
 
 /**
- * @brief Обработчик сброса BLE стека
- * @param reason Причина сброса
+ * @brief BLE stack reset handler
+ * @param reason Reason for the reset
  */
 void CBTTask::ble_on_reset(int reason)
 {
@@ -259,14 +264,14 @@ void CBTTask::ble_on_reset(int reason)
 
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
 /**
- * @brief Обработчик синхронизации для режима сканирования iBeacon
+ * @brief Synchronization handler for iBeacon scanning mode
  */
 void CBTTask::ble_on_sync_rx()
 {
     ESP_LOGD(TAG, "BLE rx");
     int rc;
 
-    /* Убедимся, что установлен правильный адрес устройства (предпочтительно публичный) */
+    /* Ensure the correct device address is set (preferably public) */
     rc = ble_hs_util_ensure_addr(0);
     if (rc != 0)
     {
@@ -274,19 +279,19 @@ void CBTTask::ble_on_sync_rx()
         return;
     }
 
-    /* Начинаем сканирование для поиска периферийных устройств */
+    /* Start scanning to find peripheral devices */
     ble_scan();
 }
 
 /**
- * @brief Запуск сканирования BLE устройств
+ * @brief Start BLE device scanning
  */
 void CBTTask::ble_scan()
 {
-    uint8_t own_addr_type; // Тип собственного адреса устройства
+    uint8_t own_addr_type; // Type of the own device address
     int rc;
 
-    /* Определяем тип адреса для использования при рекламе (без приватности) */
+    /* Determine the address type to use for advertising (without privacy) */
     rc = ble_hs_id_infer_auto(0, &own_addr_type);
     if (rc != 0)
     {
@@ -295,38 +300,38 @@ void CBTTask::ble_scan()
     }
 
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
-    // Расширенные параметры сканирования
+    // Extended scanning parameters
     struct ble_gap_ext_disc_params disc_params;
-    disc_params.passive = 1; // Пассивное сканирование
+    disc_params.passive = 1; // Passive scanning
 
-    /* Используем значения по умолчанию для остальных параметров */
+    /* Use default values for other parameters */
     disc_params.itvl = 0;   // BLE_GAP_SCAN_ITVL_MS(600);
     disc_params.window = 0; // BLE_GAP_SCAN_ITVL_MS(300);
 
-    // Запуск расширенного сканирования
+    // Start extended scanning
     rc = ble_gap_ext_disc(own_addr_type, 0, 0, 1, 0, 0,
                           &disc_params, &disc_params, ble_rx_gap_event, NULL);
     assert(rc == 0);
 
 #else
-    // Стандартные параметры сканирования
+    // Standard scanning parameters
     struct ble_gap_disc_params disc_params;
-    /* Фильтруем дубликаты - не обрабатываем повторные рекламы от одного устройства */
+    /* Filter duplicates - do not process repeated advertisements from one device */
     disc_params.filter_duplicates = 1;
 
     /**
-     * Выполняем пассивное сканирование. Т.е. не отправляем запросы сканирования
-     * каждому рекламодателю.
+     * Perform passive scanning. I.e., do not send scan requests
+     * to each advertiser.
      */
     disc_params.passive = 1;
 
-    /* Используем значения по умолчанию для остальных параметров */
+    /* Use default values for other parameters */
     disc_params.itvl = 0;
     disc_params.window = 0;
     disc_params.filter_policy = 0;
     disc_params.limited = 0;
 
-    // Запуск стандартного сканирования
+    // Start standard scanning
     rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params,
                       ble_rx_gap_event, NULL);
     if (rc != 0)
@@ -337,95 +342,95 @@ void CBTTask::ble_scan()
 }
 
 /**
- * @brief Обработчик событий GAP для сканирования
- * @param event Событие GAP
- * @param arg Дополнительные аргументы
- * @return Код возврата
+ * @brief GAP event handler for scanning
+ * @param event GAP event
+ * @param arg Additional arguments
+ * @return Return code
  */
 int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
 {
-    struct ble_hs_adv_fields fields; // Поля рекламных данных
+    struct ble_hs_adv_fields fields; // Advertising data fields
     int rc;
     STaskMessage msg;
-    SBeacon *beacon; // Структура для данных iBeacon
-    SMac *mac;       // Структура для MAC адреса
+    SBeacon *beacon; // Structure for iBeacon data
+    SMac *mac;       // Structure for MAC address
 
     switch (event->type)
     {
     case BLE_GAP_EVENT_DISC_COMPLETE:
-        // Сканирование завершено
+        // Scanning completed
         return 0;
 
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
     case BLE_GAP_EVENT_EXT_DISC:
-        // Расширенное обнаружение устройств
+        // Extended device discovery
         if (event->ext_disc.legacy_event_type == BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND)
         {
-            // Парсим рекламные поля
+            // Parse advertising fields
             rc = ble_hs_adv_parse_fields(&fields, event->ext_disc.data,
                                          event->ext_disc.length_data);
             if (rc == 0)
             {
-                // Проверяем, является ли устройство iBeacon
+                // Check if the device is an iBeacon
                 if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
                 {
-                    // Создаем сообщение с данными iBeacon
+                    // Create a message with iBeacon data
                     beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
-                    std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);              // Копируем UUID
+                    std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);              // Copy UUID
                     beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256; // Major
                     beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256; // Minor
                     beacon->power = fields.mfg_data[24];                             // Power
                     beacon->rssi = event->ext_disc.rssi;                             // RSSI
-                    CBTTask::Instance()->sendMessage(&msg, 10, true);                // Отправляем сообщение
+                    CBTTask::Instance()->sendMessage(&msg, 10, true);                // Send message
                     return 0;
                 }
             }
         }
-        // Обработка MAC адресов публичных устройств
+        // Process public device MAC addresses
         if (event->ext_disc.addr.type == BLE_ADDR_PUBLIC)
         {
             mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
-            std::memcpy(mac->mac, event->ext_disc.addr.val, 6); // Копируем MAC
+            std::memcpy(mac->mac, event->ext_disc.addr.val, 6); // Copy MAC
             CBTTask::Instance()->sendMessage(&msg, 10, true);
             mac->rssi = event->ext_disc.rssi; // RSSI
         }
         return 0;
 #else
     case BLE_GAP_EVENT_DISC:
-        // Стандартное обнаружение устройств
+        // Standard device discovery
         // ESP_LOGW(TAG,"rssi %d, type %d",event->disc.rssi, event->disc.event_type);
         if (CBTTask::Instance()->mBeaconFilter)
         {
-            // Парсим рекламные поля
+            // Parse advertising fields
             rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
                                          event->disc.length_data);
             if (rc == 0)
             {
                 // ESP_LOG_BUFFER_HEX("mfg", fields.mfg_data, fields.mfg_data_len);
-                // Проверяем, является ли устройство iBeacon
+                // Check if the device is an iBeacon
                 if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
                 {
-                    // Создаем сообщение с данными iBeacon
+                    // Create a message with iBeacon data
                     beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
-                    std::memcpy(beacon->uuid.data(), &fields.mfg_data[4], 16);       // Копируем UUID
+                    std::memcpy(beacon->uuid.data(), &fields.mfg_data[4], 16);       // Copy UUID
                     beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256; // Major
                     beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256; // Minor
                     beacon->power = fields.mfg_data[24];                             // Power
                     beacon->rssi = event->disc.rssi;                                 // RSSI
-                    CBTTask::Instance()->sendMessage(&msg, 10, true);               // Отправляем сообщение
+                    CBTTask::Instance()->sendMessage(&msg, 10, true);                // Send message
                     return 0;
                 }
             }
         }
-        // Обработка MAC адресов публичных устройств
+        // Process public device MAC addresses
         if (event->disc.addr.type == BLE_ADDR_PUBLIC)
         {
             // ESP_LOG_BUFFER_HEX("mac", event->disc.addr.val, 6);
             mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
-            std::memcpy(mac->mac.data(), event->disc.addr.val, 6); // Копируем MAC
+            std::memcpy(mac->mac.data(), event->disc.addr.val, 6); // Copy MAC
             CBTTask::Instance()->sendMessage(&msg, 10, true);
             mac->rssi = event->disc.rssi; // RSSI
-       }
+        }
         return 0;
 #endif
 
@@ -437,26 +442,26 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
 
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
 /**
- * @brief Обработчик синхронизации для режима передачи iBeacon
+ * @brief Synchronization handler for iBeacon transmission mode
  */
 void CBTTask::ble_on_sync_beacon()
 {
     ESP_LOGD(TAG, "BLE sync beacon");
-    /* Генерируем неразрешаемый частный адрес */
+    /* Generate a non-resolvable private address */
     ble_app_set_addr();
-    /* Запускаем рекламу на неопределенный срок */
+    /* Start advertising indefinitely */
     ble_advertise_beacon();
 }
 
 /**
- * @brief Установка адреса BLE устройства
+ * @brief Set the BLE device address
  */
 void CBTTask::ble_app_set_addr()
 {
-    ble_addr_t addr; // Структура адреса
+    ble_addr_t addr; // Address structure
     int rc;
 
-    // Генерируем случайный адрес
+    // Generate a random address
     rc = ble_hs_id_gen_rnd(1, &addr);
     if (rc != 0)
     {
@@ -464,7 +469,7 @@ void CBTTask::ble_app_set_addr()
         return;
     }
 
-    // Устанавливаем случайный адрес
+    // Set the random address
     rc = ble_hs_id_set_rnd(addr.val);
     if (rc != 0)
     {
@@ -474,14 +479,14 @@ void CBTTask::ble_app_set_addr()
 }
 
 /**
- * @brief Запуск рекламы iBeacon
+ * @brief Start iBeacon advertising
  */
 void CBTTask::ble_advertise_beacon()
 {
-    struct ble_gap_adv_params adv_params; // Параметры рекламы
+    struct ble_gap_adv_params adv_params; // Advertising parameters
     int rc;
 
-    // Устанавливаем данные рекламы для iBeacon
+    // Set the advertising data for iBeacon
     rc = ble_ibeacon_set_adv_data(CBTTask::Instance()->mBeaconID,
                                   CBTTask::Instance()->mBeaconMajor,
                                   CBTTask::Instance()->mBeaconMinor,
@@ -492,7 +497,7 @@ void CBTTask::ble_advertise_beacon()
         return;
     }
 
-    /* Начинаем рекламу */
+    /* Start advertising */
     adv_params = (struct ble_gap_adv_params){0};
     rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, nullptr, BLE_HS_FOREVER,
                            &adv_params, nullptr, nullptr);
@@ -504,42 +509,42 @@ void CBTTask::ble_advertise_beacon()
 #endif
 
 /**
- * @brief Обработчик событий GAP для сервера данных
- * @param event Событие GAP
- * @param arg Дополнительные аргументы
- * @return Код возврата
+ * @brief GAP event handler for the data server
+ * @param event GAP event
+ * @param arg Additional arguments
+ * @return Return code
  */
 int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
 {
     switch (event->type)
     {
     case BLE_GAP_EVENT_CONNECT:
-        // Событие подключения
+        // Connection event
         if (event->connect.status != 0)
         {
             ESP_LOGW(TAG, "Connection failed");
             CBTTask::Instance()->mConnect = false;
-            /* Подключение не удалось - возобновляем рекламу */
+            /* Connection failed - resume advertising */
             ble_advertise_data();
         }
         else
         {
             ESP_LOGI(TAG, "Connection established");
             CBTTask::Instance()->mConnect = true;
-            // Вызываем callback при подключении
+            // Call the connection callback
             if (CBTTask::Instance()->mOnConnect != nullptr)
                 CBTTask::Instance()->mOnConnect(true);
         }
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
-        // Событие отключения
+        // Disconnection event
         ESP_LOGW(TAG, "disconnect; reason=%d", event->disconnect.reason);
         CBTTask::Instance()->mConnect = false;
-        // Вызываем callback при отключении
+        // Call the disconnection callback
         if (CBTTask::Instance()->mOnConnect != nullptr)
             CBTTask::Instance()->mOnConnect(false);
-        ble_advertise_data(); // Возобновляем рекламу
+        ble_advertise_data(); // Resume advertising
         return 0;
 
     default:
@@ -548,38 +553,38 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
 }
 
 /**
- * @brief Запуск рекламы данных
+ * @brief Start data advertising
  */
 void CBTTask::ble_advertise_data()
 {
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
     int rc;
-    struct ble_gap_ext_adv_params params; // Параметры расширенной рекламы
-    struct ble_hs_adv_fields adv_fields;  // Поля рекламных данных
-    struct os_mbuf *data;                 // Буфер для данных рекламы
+    struct ble_gap_ext_adv_params params; // Extended advertising parameters
+    struct ble_hs_adv_fields adv_fields;  // Advertising data fields
+    struct os_mbuf *data;                 // Buffer for advertising data
 
-    /* Устанавливаем случайный (NRPA) адрес для экземпляра */
+    /* Set a random (NRPA) address for the instance */
     if (CBTTask::Instance()->mAddr.type == 0)
     {
         rc = ble_hs_id_gen_rnd(1, &(CBTTask::Instance()->mAddr));
         assert(rc == 0);
     }
 
-    /* Для периодической рекламы используем экземпляр с неподключаемой рекламой */
+    /* For periodic advertising, use the instance with non-connectable advertising */
     memset(&params, 0, sizeof(params));
 
-    /* Рекламируемся используя случайный адрес */
+    /* Advertise using a random address */
     params.own_addr_type = BLE_OWN_ADDR_RANDOM;
     params.primary_phy = BLE_HCI_LE_PHY_1M;
     params.secondary_phy = BLE_HCI_LE_PHY_2M;
     params.sid = 1;
-    params.connectable = 1; // Подключаемая реклама
+    params.connectable = 1; // Connectable advertising
 
-    const char *name = ble_svc_gap_device_name(); // Получаем имя устройства
+    const char *name = ble_svc_gap_device_name(); // Get the device name
 
     CBTTask::Instance()->lock();
     int size = (CBTTask::Instance()->mManufacturerDataSize + strlen(name));
-    // Выделяем буфер для данных рекламы
+    // Allocate buffer for advertising data
     if (size > 20)
     {
         data = os_msys_get_pkthdr(size + (BLE_HS_ADV_MAX_SZ - 20), 0);
@@ -592,7 +597,7 @@ void CBTTask::ble_advertise_data()
     }
     assert(data);
 
-    /* Настраиваем экземпляр 1 */
+    /* Configure instance 1 */
     rc = ble_gap_ext_adv_configure(1, &params, NULL, CBTTask::ble_server_gap_event, NULL);
     assert(rc == 0);
 
@@ -601,9 +606,9 @@ void CBTTask::ble_advertise_data()
 
     memset(&adv_fields, 0, sizeof(adv_fields));
 
-    /* Рекламируем два флага:
-     *     o Обнаруживаемость в последующей рекламе (общая)
-     *     o Только BLE (BR/EDR не поддерживается).
+    /* Advertise two flags:
+     *     o Discoverability in subsequent advertising (general)
+     *     o BLE only (BR/EDR not supported).
      */
     adv_fields.flags = BLE_HS_ADV_F_DISC_GEN |
                        BLE_HS_ADV_F_BREDR_UNSUP;
@@ -612,13 +617,13 @@ void CBTTask::ble_advertise_data()
     adv_fields.name_len = strlen(name);
     adv_fields.name_is_complete = 1;
 
-    // Устанавливаем UUID сервиса
+    // Set the service UUID
     ble_uuid16_t t[1] = {BLE_UUID16_INIT(BLE_SVC_SPP_UUID16)};
     adv_fields.uuids16 = t;
     adv_fields.num_uuids16 = 1;
     adv_fields.uuids16_is_complete = 1;
 
-    // Устанавливаем производственные данные
+    // Set the manufacturer data
     adv_fields.mfg_data = CBTTask::Instance()->mManufacturerData;
     adv_fields.mfg_data_len = CBTTask::Instance()->mManufacturerDataSize;
 
@@ -629,11 +634,11 @@ void CBTTask::ble_advertise_data()
     rc = ble_gap_ext_adv_set_data(1, data);
     assert(rc == 0);
 
-    /* Запускаем рекламу */
+    /* Start advertising */
     rc = ble_gap_ext_adv_start(1, 0, 0);
     assert(rc == 0);
 #else
-    // Стандартная реклама
+    // Standard advertising
     struct ble_gap_adv_params adv_params;
     struct ble_hs_adv_fields fields;
     const char *name;
@@ -646,34 +651,34 @@ void CBTTask::ble_advertise_data()
     memset(&scan_response_fields, 0, sizeof scan_response_fields);
 
     /**
-     *  Устанавливаем данные рекламы:
-     *     o Флаги (указывают тип рекламы и другую общую информацию).
-     *     o Мощность передачи.
-     *     o Имя устройства.
-     *     o 16-битные UUID сервисов.
+     *  Set the advertising data:
+     *     o Flags (indicate the type of advertising and other general info).
+     *     o Transmission power level.
+     *     o Device name.
+     *     o 16-bit service UUIDs.
      */
 
     memset(&fields, 0, sizeof fields);
 
-    /* Рекламируем два флага:
-     *     o Обнаруживаемость в последующей рекламе (общая)
-     *     o Только BLE (BR/EDR не поддерживается).
+    /* Advertise two flags:
+     *     o Discoverability in subsequent advertising (general)
+     *     o BLE only (BR/EDR not supported).
      */
     fields.flags = BLE_HS_ADV_F_DISC_GEN |
                    BLE_HS_ADV_F_BREDR_UNSUP;
 
-    /* Указываем, что поле уровня мощности передачи должно быть включено */
+    /* Indicate that the transmission power level field should be included */
     fields.tx_pwr_lvl_is_present = 1;
     fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
 
     fields.name = (uint8_t *)name;
     if (compact && (strlen(name) > 11))
     {
-        // Компактное имя в основном объявлении
+        // Compact name in main advertisement
         fields.name_len = 11;
         fields.name_is_complete = 0;
 
-        // Полное имя в ответе на сканирование
+        // Full name in scan response
         scan_response_fields.name = (uint8_t *)name;
         scan_response_fields.name_len = strlen(name);
         scan_response_fields.name_is_complete = 1;
@@ -684,7 +689,7 @@ void CBTTask::ble_advertise_data()
         fields.name_is_complete = 1;
     }
 
-    // Устанавливаем UUID сервиса
+    // Set the service UUID
     ble_uuid16_t t[1] = {BLE_UUID16_INIT(BLE_SVC_SPP_UUID16)};
     fields.uuids16 = t;
     fields.num_uuids16 = 1;
@@ -693,7 +698,7 @@ void CBTTask::ble_advertise_data()
     fields.mfg_data = CBTTask::Instance()->mManufacturerData;
     if (compact)
     {
-        // Компактные производственные данные
+        // Compact manufacturer data
         fields.mfg_data_len = 5;
         scan_response_fields.mfg_data = CBTTask::Instance()->mManufacturerData;
         scan_response_fields.name_len = CBTTask::Instance()->mManufacturerDataSize;
@@ -717,10 +722,10 @@ void CBTTask::ble_advertise_data()
         return;
     }
 
-    /* Начинаем рекламу */
+    /* Start advertising */
     memset(&adv_params, 0, sizeof adv_params);
-    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND; // Ненаправленная реклама
-    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN; // Общее обнаружение
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND; // Undirected advertising
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN; // General discovery
     rc = ble_gap_adv_start(CBTTask::Instance()->own_addr_type, nullptr, BLE_HS_FOREVER,
                            &adv_params, ble_server_gap_event, nullptr);
     if (rc != 0)
@@ -733,13 +738,13 @@ void CBTTask::ble_advertise_data()
 }
 
 /**
- * @brief Обработчик синхронизации для режима передачи данных
+ * @brief Synchronization handler for data transmission mode
  */
 void CBTTask::ble_on_sync_data()
 {
     int rc;
 
-    // Убеждаемся, что адрес установлен правильно
+    // Ensure the address is set correctly
     rc = ble_hs_util_ensure_addr(0);
     if (rc != 0)
     {
@@ -747,7 +752,7 @@ void CBTTask::ble_on_sync_data()
         return;
     }
 
-    /* Определяем тип адреса для использования при рекламе */
+    /* Determine the address type to use for advertising */
     rc = ble_hs_id_infer_auto(0, &CBTTask::Instance()->own_addr_type);
     if (rc != 0)
     {
@@ -755,28 +760,28 @@ void CBTTask::ble_on_sync_data()
         return;
     }
 
-    /* Начинаем рекламу данных */
+    /* Start data advertising */
     ble_advertise_data();
 }
 
 /**
- * @brief Инициализация GATT сервера
- * @return Код ошибки
+ * @brief Initialize the GATT server
+ * @return Error code
  */
 int CBTTask::gatt_svr_init()
 {
     int rc = 0;
-    ble_svc_gap_init();  // Инициализация GAP сервиса
-    ble_svc_gatt_init(); // Инициализация GATT сервиса
+    ble_svc_gap_init();  // Initialize GAP service
+    ble_svc_gatt_init(); // Initialize GATT service
 
-    rc = ble_gatts_count_cfg(gatt_svr_svcs); // Подсчет конфигурации сервисов
+    rc = ble_gatts_count_cfg(gatt_svr_svcs); // Count service configuration
 
     if (rc != 0)
     {
         return rc;
     }
 
-    rc = ble_gatts_add_svcs(gatt_svr_svcs); // Добавление сервисов
+    rc = ble_gatts_add_svcs(gatt_svr_svcs); // Add services
     if (rc != 0)
     {
         return rc;
@@ -786,42 +791,42 @@ int CBTTask::gatt_svr_init()
 }
 
 /**
- * @brief Инициализация Bluetooth
- * @param mode Режим работы Bluetooth
- * @return Текущий режим работы
+ * @brief Initialize Bluetooth
+ * @param mode Bluetooth operation mode
+ * @return Current operation mode
  */
 EBTMode CBTTask::init_bt(EBTMode mode)
 {
-    // Проверяем, не инициализирован ли уже Bluetooth или не выключен ли режим
+    // Check if Bluetooth is already initialized or mode is Off
     if ((mMode != EBTMode::Off) || (mode == EBTMode::Off))
         return mMode;
 
-    esp_err_t ret = nimble_port_init(); // Инициализация порта NimBLE
+    esp_err_t ret = nimble_port_init(); // Initialize the NimBLE port
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Failed to init nimble %d ", ret);
         return mMode;
     }
 
-    // Устанавливаем callback функции
+    // Set callback functions
     ble_hs_cfg.reset_cb = ble_on_reset;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
 
-    // Выбираем callback в зависимости от режима
+    // Choose the callback depending on the mode
     switch (mode)
     {
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
     case EBTMode::iBeaconTx:
-        ble_hs_cfg.sync_cb = ble_on_sync_beacon; // Режим передачи iBeacon
+        ble_hs_cfg.sync_cb = ble_on_sync_beacon; // iBeacon transmission mode
         break;
 #endif
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
     case EBTMode::iBeaconRx:
-        ble_hs_cfg.sync_cb = ble_on_sync_rx; // Режим сканирования iBeacon
+        ble_hs_cfg.sync_cb = ble_on_sync_rx; // iBeacon scanning mode
         break;
 #endif
     case EBTMode::Data:
-        ble_hs_cfg.sync_cb = ble_on_sync_data; // Режим передачи данных
+        ble_hs_cfg.sync_cb = ble_on_sync_data; // Data transmission mode
         if (gatt_svr_init() != 0)
             ESP_LOGE(TAG, "Register custom service failed");
         if (ble_svc_gap_device_name_set(CBTTask::device_name) != 0)
@@ -832,10 +837,10 @@ EBTMode CBTTask::init_bt(EBTMode mode)
         break;
     }
 
-    // Инициализация конфигурации хранения
+    // Initialize the store configuration
     ble_store_config_init();
 
-    // Запуск задачи хоста BLE
+    // Start the BLE host task
     nimble_port_freertos_init(ble_host_task);
 
     mMode = mode;
@@ -843,14 +848,14 @@ EBTMode CBTTask::init_bt(EBTMode mode)
 }
 
 /**
- * @brief Деинициализация Bluetooth
+ * @brief Deinitialize Bluetooth
  */
 void CBTTask::deinit_bt()
 {
     if (mMode == EBTMode::Off)
         return;
-    nimble_port_stop();   // Остановка порта NimBLE
-    nimble_port_deinit(); // Деинициализация порта NimBLE
+    nimble_port_stop();   // Stop the NimBLE port
+    nimble_port_deinit(); // Deinitialize the NimBLE port
     mOnRx = nullptr;
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     mOnRx2 = nullptr;
@@ -860,18 +865,18 @@ void CBTTask::deinit_bt()
 }
 
 /**
- * @brief Задача хоста BLE
- * @param param Параметры задачи
+ * @brief BLE host task
+ * @param param Task parameters
  */
 void CBTTask::ble_host_task(void *param)
 {
-    /* Эта функция возвращается только когда вызывается nimble_port_stop() */
+    /* This function returns only when nimble_port_stop() is called */
     nimble_port_run();
     nimble_port_freertos_deinit();
 }
 
 /**
- * @brief Основная функция выполнения задачи Bluetooth
+ * @brief Main function for the Bluetooth task execution
  */
 void CBTTask::run()
 {
@@ -881,7 +886,7 @@ void CBTTask::run()
     STaskMessage msg;
 
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
-    // Загрузка параметров iBeacon из NVS
+    // Load iBeacon parameters from NVS
     nvs_handle_t nvs_handle;
     if (nvs_open("nvs", NVS_READWRITE, &nvs_handle) == ESP_OK)
     {
@@ -889,7 +894,7 @@ void CBTTask::run()
         nvs_get_u8(nvs_handle, "btx", &mBeaconTx);
         if (nvs_get_blob(nvs_handle, "beacon", mBeaconID, &sz) != ESP_OK)
         {
-            esp_fill_random(mBeaconID, sizeof(mBeaconID)); // Генерируем случайный ID
+            esp_fill_random(mBeaconID, sizeof(mBeaconID)); // Generate a random ID
             nvs_set_blob(nvs_handle, "beacon", mBeaconID, sizeof(mBeaconID));
             nvs_commit(nvs_handle);
         }
@@ -898,19 +903,19 @@ void CBTTask::run()
     else
     {
         ESP_LOGE(TAG, "nvs_open failed");
-        esp_fill_random(mBeaconID, sizeof(mBeaconID)); // Генерируем случайный ID
+        esp_fill_random(mBeaconID, sizeof(mBeaconID)); // Generate a random ID
     }
 #endif
 
-    struct os_mbuf *txom; // Буфер для передачи данных
+    struct os_mbuf *txom; // Buffer for data transmission
     int er;
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
-    bool skip = false; // Флаг пропуска передачи
+    bool skip = false; // Flag to skip transmission
     int n;
 #endif
     for (;;)
     {
-        // Обработка входящих сообщений
+        // Process incoming messages
         while (getMessage(&msg, TASK_MAX_BLOCK_TIME))
         {
             switch (msg.msgID)
@@ -1010,7 +1015,7 @@ void CBTTask::run()
 #endif
                 break;
             case MSG_WRITE_DATA:
-                // Отправка данных через BLE уведомление
+                // Send data via BLE notification
                 if (mConnect)
                 {
                     txom = ble_hs_mbuf_from_flat(msg.msgBody, msg.shortParam);
@@ -1026,7 +1031,7 @@ void CBTTask::run()
                 vPortFree(msg.msgBody);
                 break;
             case MSG_READ_DATA:
-                // Получение данных через BLE
+                // Receive data via BLE
                 if (mOnRx != nullptr)
                     mOnRx((uint8_t *)msg.msgBody, msg.shortParam);
                 else
@@ -1043,7 +1048,7 @@ void CBTTask::run()
                 skip = true;
                 break;
             case MSG_WRITE_DATA2:
-                // Отправка данных через второй канал
+                // Send data via the second channel
                 if (mConnect && (!skip))
                 {
                     for (n = 0; n < 5; n++)
@@ -1069,7 +1074,7 @@ void CBTTask::run()
                 mOnRx2 = (onBLEDataRx *)msg.msgBody;
                 break;
             case MSG_READ_DATA2:
-                // Получение данных через второй канал
+                // Receive data via the second channel
                 if (mOnRx2 != nullptr)
                     mOnRx2((uint8_t *)msg.msgBody, msg.shortParam);
                 else
@@ -1083,7 +1088,7 @@ void CBTTask::run()
                 mOnConnect = (onBLEConnect *)msg.msgBody;
                 break;
             case MSG_SET_ADV_DATA:
-                // Установка данных рекламы
+                // Set advertising data
                 lock();
                 if (mManufacturerData != nullptr)
                     vPortFree(mManufacturerData);
@@ -1129,11 +1134,11 @@ endTask:
 }
 
 /**
- * @brief Отправка данных через BLE
- * @param data Указатель на данные
- * @param size Размер данных
- * @param xTicksToWait Время ожидания
- * @return true если успешно, false если ошибка
+ * @brief Send data via BLE
+ * @param data Pointer to data
+ * @param size Data size
+ * @param xTicksToWait Wait time
+ * @return true if successful, false if error
  */
 bool CBTTask::sendData(uint8_t *data, size_t size, TickType_t xTicksToWait)
 {
@@ -1145,12 +1150,12 @@ bool CBTTask::sendData(uint8_t *data, size_t size, TickType_t xTicksToWait)
 
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
 /**
- * @brief Отправка данных через второй канал BLE
- * @param data Указатель на данные
- * @param size Размер данных
- * @param index Индекс данных
- * @param xTicksToWait Время ожидания
- * @return true если успешно, false если ошибка
+ * @brief Send data via the second BLE channel
+ * @param data Pointer to data
+ * @param size Data size
+ * @param index Data index
+ * @param xTicksToWait Wait time
+ * @return true if successful, false if error
  */
 bool CBTTask::sendData2(uint8_t *data, size_t size, uint16_t index, TickType_t xTicksToWait)
 {
@@ -1164,11 +1169,11 @@ bool CBTTask::sendData2(uint8_t *data, size_t size, uint16_t index, TickType_t x
 #endif
 
 /**
- * @brief Установка производственных данных для рекламы
- * @param data Указатель на данные
- * @param size Размер данных
- * @param xTicksToWait Время ожидания
- * @return true если успешно, false если ошибка
+ * @brief Set manufacturer data for advertising
+ * @param data Pointer to data
+ * @param size Data size
+ * @param xTicksToWait Wait time
+ * @return true if successful, false if error
  */
 bool CBTTask::setManufacturerData(uint8_t *data, size_t size, TickType_t xTicksToWait)
 {
