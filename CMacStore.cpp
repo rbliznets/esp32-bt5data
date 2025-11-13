@@ -271,9 +271,8 @@ uint8_t *CMacStore::getData(uint16_t &size)
     // Form the header at the beginning of the buffer
     data[0] = 0x08;                // Data format identifier (arbitrary, defined by application protocol)
     data[1] = mOldMacs->size();    // Number of MAC addresses included in the buffer
-    data[2] = mOldBeacons->size(); // Number of iBeacons included in the buffer
 
-    uint16_t index = 3; // Index for writing data into the buffer, starting after the 3-byte header
+    uint16_t index = 2; // Index for writing data into the buffer, starting after the 3-byte header
 
     // Copy MAC address data into the buffer
     for (auto &var : *mOldMacs)
@@ -283,6 +282,9 @@ uint8_t *CMacStore::getData(uint16_t &size)
         data[index] = (uint8_t)var.rssi;              // Copy the RSSI value (cast to uint8_t)
         index++;                                      // Move index forward by 1 byte
     }
+
+    data[index] = mOldBeacons->size(); // Number of iBeacons included in the buffer
+    index++;
 
     // Copy iBeacon data into the buffer
     for (auto &var : *mOldBeacons)
