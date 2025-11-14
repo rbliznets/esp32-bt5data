@@ -259,18 +259,20 @@ uint8_t *CMacStore::getData(uint16_t &size)
     // Calculate the total size of the output buffer:
     // 3 bytes header + (number of MACs in old list * 7 bytes per MAC [6 for addr + 1 for RSSI])
     //               + (number of iBeacons in old list * 22 bytes per Beacon [16 UUID + 2 Major + 2 Minor + 1 Pwr + 1 RSSI])
-    size = 3 + mOldMacs->size() * 7 + mOldBeacons->size() * 22;
+    size = 2 + mOldMacs->size() * 7 + mOldBeacons->size() * 22;
+    if (mOldBeacons->size() != 0)
+        size++;
 
     // If there is no actual device data (only the 3-byte header), return nullptr
-    if (size == 3)
+    if (size == 2)
         return nullptr;
 
     // Allocate memory for the data buffer based on the calculated size
     uint8_t *data = new uint8_t[size];
 
     // Form the header at the beginning of the buffer
-    data[0] = 0x08;                // Data format identifier (arbitrary, defined by application protocol)
-    data[1] = mOldMacs->size();    // Number of MAC addresses included in the buffer
+    data[0] = 0x08;             // Data format identifier (arbitrary, defined by application protocol)
+    data[1] = mOldMacs->size(); // Number of MAC addresses included in the buffer
 
     uint16_t index = 2; // Index for writing data into the buffer, starting after the 3-byte header
 
