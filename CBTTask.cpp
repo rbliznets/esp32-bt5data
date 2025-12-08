@@ -1131,6 +1131,27 @@ endTask:
         delete mBeaconTimer;
     }
 #endif
+    while (getMessage(&msg, 0))
+    {
+        switch (msg.msgID)
+        {
+#ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
+        case MSG_WRITE_DATA2:
+        case MSG_READ_DATA2:
+#endif
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
+        case MSG_BEACON_DATA:
+        case MSG_MAC_DATA:
+#endif
+        case MSG_WRITE_DATA:
+        case MSG_READ_DATA:
+        case MSG_SET_ADV_DATA:
+            vPortFree(msg.msgBody);
+            break;
+        default:
+            break;
+        }
+    }
 }
 
 /**
