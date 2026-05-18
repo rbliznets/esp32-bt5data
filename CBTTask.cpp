@@ -235,7 +235,6 @@ CBTTask::CBTTask() : CBaseTask(), CLock()
     mOnConnect = nullptr;
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
     mOnBeacon = nullptr;
-    mBeaconTimer = nullptr;
     mBeaconSleep = false;
     mBeaconSleepTime = 0;
 #endif
@@ -923,11 +922,7 @@ void CBTTask::run()
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
             case MSG_INIT_BEACON_TX:
                 deinit_bt();
-                if (mBeaconTimer != nullptr)
-                {
-                    delete mBeaconTimer;
-                    mBeaconTimer = nullptr;
-                }
+                mBeaconTimer.reset();
                 mBeaconMajor = msg.shortParam;
                 mBeaconMinor = msg.paramID;
                 init_bt(EBTMode::iBeaconTx);
@@ -940,9 +935,9 @@ void CBTTask::run()
                 mBeaconSleepTime = (msg.shortParam & 0x7f) * 1000;
                 mBeaconFilter = (msg.shortParam & 0x80) != 0;
                 init_bt(EBTMode::iBeaconRx);
-                if (mBeaconTimer == nullptr)
+                if (!mBeaconTimer)
                 {
-                    mBeaconTimer = new CSoftwareTimer(0, MSG_BEACON_TIMER);
+                    mBeaconTimer = std::make_unique<CSoftwareTimer>(0, MSG_BEACON_TIMER);
                 }
                 mBeaconTimer->start(this, ETimerEvent::SendBack, CONFIG_BLE_DATA_IBEACON_SCAN_TIMER);
                 mBeaconSleep = false;
@@ -968,7 +963,7 @@ void CBTTask::run()
                 }
                 break;
             case MSG_BEACON_TIMER:
-                if (mBeaconTimer != nullptr)
+                if (mBeaconTimer)
                 {
                     if (mBeaconSleep)
                     {
@@ -992,11 +987,7 @@ void CBTTask::run()
             case MSG_INIT_DATA:
                 deinit_bt();
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
-                if (mBeaconTimer != nullptr)
-                {
-                    delete mBeaconTimer;
-                    mBeaconTimer = nullptr;
-                }
+                mBeaconTimer.reset();
 #endif
                 mOnRx = (onBLEDataRx *)msg.msgBody;
                 init_bt(EBTMode::Data);
@@ -1007,11 +998,7 @@ void CBTTask::run()
             case MSG_OFF:
                 deinit_bt();
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
-                if (mBeaconTimer != nullptr)
-                {
-                    delete mBeaconTimer;
-                    mBeaconTimer = nullptr;
-                }
+                mBeaconTimer.reset();
 #endif
                 break;
             case MSG_WRITE_DATA:
@@ -1125,12 +1112,6 @@ endTask:
     deinit_bt();
     if (mManufacturerData != nullptr)
         vPortFree(mManufacturerData);
-#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
-    if (mBeaconTimer != nullptr)
-    {
-        delete mBeaconTimer;
-    }
-#endif
     while (getMessage(&msg, 0))
     {
         switch (msg.msgID)

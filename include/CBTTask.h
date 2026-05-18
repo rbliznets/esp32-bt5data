@@ -20,6 +20,7 @@
 #include "host/ble_uuid.h"
 #include "host/ble_gatt.h"
 #include <array>
+#include <memory>
 
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
 #define MSG_INIT_BEACON_TX (10) ///< Initialize iBeacon mode command.
@@ -216,7 +217,7 @@ protected:
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
 	onBeaconRx *mOnBeacon = nullptr;		///< Callback function for receiving beacon data.
 	uint32_t mBeaconSleepTime = 5000;		///< Sleep time between scans (ms)
-	CSoftwareTimer *mBeaconTimer = nullptr; ///< Timer for controlling scanning
+	std::unique_ptr<CSoftwareTimer> mBeaconTimer; ///< Timer for controlling scanning
 	bool mBeaconSleep = false;				///< Scanner sleep mode flag
 	bool mBeaconFilter = true;
 
