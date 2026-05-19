@@ -118,6 +118,7 @@ int CBTTask::gatt_svr_chr_write(struct os_mbuf *om, uint16_t chn)
     rc = ble_hs_mbuf_to_flat(om, msg.msgBody, om_len, nullptr);
     if (rc != 0)
     {
+        vPortFree(msg.msgBody);
         return BLE_ATT_ERR_UNLIKELY; // Copy error
     }
 
