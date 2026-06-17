@@ -236,7 +236,7 @@ void CMacStore::debug()
     // Print information about iBeacons from the previous scan
     for (auto &var : *mOldBeacons)
     {
-        ESP_LOGE(TAG, "iBeacon %d:%d rssi:%d dBm, pwr: %d dBm", var.major, var.minor, var.rssi, var.power);
+        ESP_LOGE(TAG, "Beacon %d:%d rssi:%d dBm, pwr: %d dBm", var.major, var.minor, var.rssi, var.power);
         ESP_LOG_BUFFER_HEX(TAG, var.uuid.data(), 16); // Log the 16-byte UUID in hex
     }
 }

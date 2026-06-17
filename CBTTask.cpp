@@ -398,7 +398,8 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
 #else
     case BLE_GAP_EVENT_DISC:
         // Standard device discovery
-        // ESP_LOGW(TAG,"rssi %d, type %d",event->disc.rssi, event->disc.event_type);
+        // ESP_LOGW(TAG,"rssi %d, type %d (%d)",event->disc.rssi, event->disc.event_type,event->disc.addr.type);
+        // ESP_LOG_BUFFER_HEX("mac", event->disc.addr.val, 6);
         if (CBTTask::Instance()->mBeaconFilter)
         {
             // Parse advertising fields
@@ -406,10 +407,35 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
                                          event->disc.length_data);
             if (rc == 0)
             {
-                // ESP_LOG_BUFFER_HEX("mfg", fields.mfg_data, fields.mfg_data_len);
+                if(fields.uuids16_is_complete)
+                {
+                    // ESP_LOGI(TAG,"uuids16 0x%04X",fields.uuids16->value);
+                    if((fields.uuids16->value == 0xFEAA) && (fields.svc_data_uuid16_len > 4))
+                    {
+                        // ESP_LOG_BUFFER_HEX("uuid16", fields.svc_data_uuid16, fields.svc_data_uuid16_len);
+                        // Create a message with Eddystone data
+                        beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
+                        if(fields.svc_data_uuid16_len >= 10)
+                            std::memcpy(beacon->uuid.data(), &fields.svc_data_uuid16[4], 16);       
+                        else
+                        {
+                            std::memset(beacon->uuid.data(),0,16);
+                            std::memcpy(beacon->uuid.data(), &fields.svc_data_uuid16[4], fields.svc_data_uuid16_len-4);       
+
+                        }
+                        beacon->major = fields.svc_data_uuid16[1] + fields.svc_data_uuid16[0] * 256; 
+                        beacon->minor = fields.svc_data_uuid16[2] ; // Type
+                        beacon->power = -((int8_t)fields.svc_data_uuid16[3]);                        // Power
+                        beacon->rssi = event->disc.rssi;                                 // RSSI
+                        CBTTask::Instance()->sendMessage(&msg, 10, true);                // Send message
+                        return 0;
+                    }
+                }
+                
                 // Check if the device is an iBeacon
                 if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
                 {
+                    // ESP_LOG_BUFFER_HEX("mfg", fields.mfg_data, fields.mfg_data_len);
                     // Create a message with iBeacon data
                     beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
                     std::memcpy(beacon->uuid.data(), &fields.mfg_data[4], 16);       // Copy UUID
@@ -425,7 +451,6 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
         // Process public device MAC addresses
         if (event->disc.addr.type == BLE_ADDR_PUBLIC)
         {
-            // ESP_LOG_BUFFER_HEX("mac", event->disc.addr.val, 6);
             mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
             std::memcpy(mac->mac.data(), event->disc.addr.val, 6); // Copy MAC
             CBTTask::Instance()->sendMessage(&msg, 10, true);
