@@ -247,7 +247,7 @@ void CMacStore::debug()
  *
  * Forms a binary buffer containing data about the devices found in the *previous* scan
  * (stored in mOldMacs and mOldBeacons). The buffer format is:
- * [Header: 3 bytes][MAC data: N * 7 bytes][iBeacon data: M * 22 bytes].
+ * [format id: 1 byte][MAC count: 1 byte][MAC entries: N * 7 bytes][Beacon count: 1 byte][Beacon entries: M * 22 bytes].
  * The caller is responsible for freeing the returned buffer using delete[].
  *
  * @param[out] size Reference to a uint16_t where the size of the allocated buffer will be stored.
@@ -257,14 +257,13 @@ void CMacStore::debug()
 uint8_t *CMacStore::getData(uint16_t &size)
 {
     // Calculate the total size of the output buffer:
-    // 3 bytes header + (number of MACs in old list * 7 bytes per MAC [6 for addr + 1 for RSSI])
+    // 3 bytes header (format id + MAC count + Beacon count, always written below)
+    //               + (number of MACs in old list * 7 bytes per MAC [6 for addr + 1 for RSSI])
     //               + (number of iBeacons in old list * 22 bytes per Beacon [16 UUID + 2 Major + 2 Minor + 1 Pwr + 1 RSSI])
-    size = 2 + mOldMacs->size() * 7 + mOldBeacons->size() * 22;
-    if (mOldBeacons->size() != 0)
-        size++;
+    size = 3 + mOldMacs->size() * 7 + mOldBeacons->size() * 22;
 
     // If there is no actual device data (only the 3-byte header), return nullptr
-    if (size == 2)
+    if (size == 3)
         return nullptr;
 
     // Allocate memory for the data buffer based on the calculated size
@@ -364,15 +363,14 @@ json CMacStore::getJSON()
  * Takes a binary buffer previously created by getData() and converts it back into
  * a nlohmann::json array, reconstructing the MAC address and iBeacon information.
  *
- * @param data Pointer to the binary buffer (format: 3 byte header + device data).
+ * @param data Pointer to the binary buffer (format: [format id][MAC count][MAC entries][beacon count][beacon entries]).
  * @return A nlohmann::json object containing an array of device data parsed from the buffer.
  */
 json CMacStore::data2json(uint8_t *data)
 {
-    json beacon = json::array();  // Initialize the root JSON array
-    uint16_t szmac = data[1];     // Read the number of MAC addresses from the header (byte 1)
-    uint16_t szgbeacon = data[2]; // Read the number of iBeacons from the header (byte 2)
-    uint16_t index = 3;           // Start reading device data after the 3-byte header
+    json beacon = json::array(); // Initialize the root JSON array
+    uint16_t szmac = data[1];    // Read the number of MAC addresses from the header (byte 1)
+    uint16_t index = 2;          // MAC data follows immediately after the 2-byte format id/MAC count
 
     // Parse MAC address entries
     for (uint16_t i = 0; i < szmac; i++)
@@ -391,6 +389,10 @@ json CMacStore::data2json(uint8_t *data)
         index += 7;                            // Move index forward by 7 bytes (6 for MAC + 1 for RSSI)
         beacon.push_back(j);                   // Add this MAC's JSON object to the main array
     }
+
+    // The iBeacon count byte follows right after the MAC entries, not at a fixed offset
+    uint16_t szgbeacon = data[index];
+    index++;
 
     // Parse iBeacon entries
     for (uint16_t i = 0; i < szgbeacon; i++)

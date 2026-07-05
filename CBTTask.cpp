@@ -726,7 +726,7 @@ void CBTTask::ble_advertise_data()
         // Compact manufacturer data
         fields.mfg_data_len = 5;
         scan_response_fields.mfg_data = CBTTask::Instance()->mManufacturerData;
-        scan_response_fields.name_len = CBTTask::Instance()->mManufacturerDataSize;
+        scan_response_fields.mfg_data_len = CBTTask::Instance()->mManufacturerDataSize;
 
         rc = ble_gap_adv_rsp_set_fields(&scan_response_fields);
         if (rc != 0)
