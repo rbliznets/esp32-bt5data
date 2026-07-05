@@ -46,7 +46,7 @@
 #endif
 
 #define BTTASK_NAME "bt"			///< Task name for debugging.
-#define BTTASK_STACKSIZE (4 * 1024) ///< Task stack size.
+#define BTTASK_STACKSIZE (3 * 1024) ///< Task stack size.
 #define BTTASK_PRIOR (2)			///< Task priority.
 #define BTTASK_LENGTH (30)			///< Task receive queue length.
 #ifdef CONFIG_BLE_DATA_TASK0
