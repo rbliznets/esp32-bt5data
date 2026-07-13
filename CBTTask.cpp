@@ -208,11 +208,7 @@ void CBTTask::free()
         {
             vTaskDelay(1);
         }
-#if (INCLUDE_vTaskDelete == 1)
-        while (theSingleInstance->mTaskHandle != nullptr);
-#else
         while (theSingleInstance->mTaskQueue != nullptr);
-#endif
         // Delete the instance
         delete theSingleInstance;
         theSingleInstance = nullptr;
