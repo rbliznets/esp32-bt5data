@@ -15,6 +15,17 @@
 
 #include "CJsonType.h"
 
+#if defined(CONFIG_SPIRAM) && defined(CONFIG_BLE_DATA_MACSTORE_PSRAM)
+#include "psram_allocator.h"
+/// std::list alias that places CMacStore's lists in SPIRAM (CONFIG_BLE_DATA_MACSTORE_PSRAM).
+template <typename T>
+using CMacStoreList = std::list<T, PsramAllocator<T>>;
+#else
+/// std::list alias that keeps CMacStore's lists in internal RAM.
+template <typename T>
+using CMacStoreList = std::list<T>;
+#endif
+
 /**
  * @brief Class for storing and analyzing BLE device data
  *
@@ -24,14 +35,14 @@
 class CMacStore
 {
 protected:
-    bool mBeaconEnable;                            ///< Flag to enable iBeacon tracking
-    bool mMacEnable;                               ///< Flag to enable MAC address tracking
-    std::list<std::array<uint8_t, 6>> *mWhiteList; ///< Whitelist of allowed MAC addresses
+    bool mBeaconEnable; ///< Flag to enable iBeacon tracking
+    bool mMacEnable;    ///< Flag to enable MAC address tracking
+    CMacStoreList<std::array<uint8_t, 6>> *mWhiteList; ///< Whitelist of allowed MAC addresses
 
-    std::list<SBeacon> *mOldBeacons; ///< List of iBeacons from the previous scan
-    std::list<SBeacon> *mNewBeacons; ///< List of iBeacons from the current scan
-    std::list<SMac> *mOldMacs;       ///< List of MAC addresses from the previous scan
-    std::list<SMac> *mNewMacs;       ///< List of MAC addresses from the current scan
+    CMacStoreList<SBeacon> *mOldBeacons; ///< List of iBeacons from the previous scan
+    CMacStoreList<SBeacon> *mNewBeacons; ///< List of iBeacons from the current scan
+    CMacStoreList<SMac> *mOldMacs;       ///< List of MAC addresses from the previous scan
+    CMacStoreList<SMac> *mNewMacs;       ///< List of MAC addresses from the current scan
 
 public:
     /**
@@ -43,7 +54,7 @@ public:
      * @param[in] mac Flag to enable MAC address tracking (default false)
      * @param[in] white Pointer to the MAC address whitelist (default nullptr)
      */
-    CMacStore(bool beacon = true, bool mac = false, std::list<std::array<uint8_t, 6>> *white = nullptr);
+    CMacStore(bool beacon = true, bool mac = false, CMacStoreList<std::array<uint8_t, 6>> *white = nullptr);
 
     /**
      * @brief Destructor for the CMacStore class

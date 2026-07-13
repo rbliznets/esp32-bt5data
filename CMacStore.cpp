@@ -27,16 +27,16 @@ static const char *TAG = "CMacStore"; ///< Tag for logging
  * @param white Pointer to the MAC address whitelist (can be nullptr).
  *              If provided, only MAC addresses in this list will be stored.
  */
-CMacStore::CMacStore(bool beacon, bool mac, std::list<std::array<uint8_t, 6>> *white) : mBeaconEnable(beacon), mMacEnable(mac), mWhiteList(white)
+CMacStore::CMacStore(bool beacon, bool mac, CMacStoreList<std::array<uint8_t, 6>> *white) : mBeaconEnable(beacon), mMacEnable(mac), mWhiteList(white)
 {
     // Check that at least one mode is enabled. This is a critical requirement.
     assert(beacon || mac);
 
     // Create lists to store data from old and new scans
-    mOldBeacons = new std::list<SBeacon>; ///< List of iBeacons from the previous scan
-    mNewBeacons = new std::list<SBeacon>; ///< List of iBeacons from the current scan
-    mOldMacs = new std::list<SMac>;       ///< List of MAC addresses from the previous scan
-    mNewMacs = new std::list<SMac>;       ///< List of MAC addresses from the current scan
+    mOldBeacons = new CMacStoreList<SBeacon>; ///< List of iBeacons from the previous scan
+    mNewBeacons = new CMacStoreList<SBeacon>; ///< List of iBeacons from the current scan
+    mOldMacs = new CMacStoreList<SMac>;       ///< List of MAC addresses from the previous scan
+    mNewMacs = new CMacStoreList<SMac>;       ///< List of MAC addresses from the current scan
 }
 
 /**
@@ -163,7 +163,7 @@ bool CMacStore::calculate()
         {
             res = true; // Indicate that overall changes were found
             // Swap the old and new data lists for iBeacons
-            std::list<SBeacon> *tmp = mOldBeacons; // Temporary pointer
+            CMacStoreList<SBeacon> *tmp = mOldBeacons; // Temporary pointer
             mOldBeacons = mNewBeacons;             // Old list now points to new data
             mNewBeacons = tmp;                     // New list now points to old data (for reuse)
         }
@@ -204,7 +204,7 @@ bool CMacStore::calculate()
         {
             res = true; // Indicate that overall changes were found
             // Swap the old and new data lists for MACs
-            std::list<SMac> *tmp = mOldMacs; // Temporary pointer
+            CMacStoreList<SMac> *tmp = mOldMacs; // Temporary pointer
             mOldMacs = mNewMacs;             // Old list now points to new data
             mNewMacs = tmp;                  // New list now points to old data (for reuse)
         }

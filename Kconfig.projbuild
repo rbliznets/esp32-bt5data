@@ -44,5 +44,13 @@ menu "BLE Data (NimBLE)"
         default n
         help
             iBeacon tx included.
-                
+
+    config BLE_DATA_MACSTORE_PSRAM
+        depends on SPIRAM
+        bool "Allocate CMacStore lists in SPIRAM"
+        default n
+        help
+            Place the MAC/iBeacon scan lists and whitelist used by CMacStore
+            in external SPIRAM instead of internal RAM.
+
 endmenu
