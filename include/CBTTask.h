@@ -54,6 +54,7 @@
 #else
 #define BTTASK_CPU (1) ///< CPU core number.
 #endif
+#define BTTASK_PSRAM false
 
 /// BT operation modes.
 enum class EBTMode

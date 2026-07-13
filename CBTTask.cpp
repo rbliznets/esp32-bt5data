@@ -189,7 +189,7 @@ CBTTask *CBTTask::Instance()
         // Create a new instance if it doesn't exist yet
         theSingleInstance = new CBTTask();
         // Initialize the base task
-        theSingleInstance->CBaseTask::init(BTTASK_NAME, BTTASK_STACKSIZE, BTTASK_PRIOR, BTTASK_LENGTH, BTTASK_CPU);
+        theSingleInstance->CBaseTask::init(BTTASK_NAME, BTTASK_STACKSIZE, BTTASK_PRIOR, BTTASK_LENGTH, BTTASK_CPU, BTTASK_PSRAM);
     }
     return theSingleInstance;
 };
