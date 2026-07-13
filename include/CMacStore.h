@@ -13,8 +13,7 @@
 
 #include "CBTTask.h" // Includes definitions for SBeacon and SMac
 
-#include <nlohmann/json.hpp>
-using json = nlohmann::json;
+#include "CJsonType.h"
 
 /**
  * @brief Class for storing and analyzing BLE device data
