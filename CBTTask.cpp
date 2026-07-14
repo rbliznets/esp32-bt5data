@@ -218,7 +218,7 @@ void CBTTask::free()
 /**
  * @brief Constructor for the class
  */
-CBTTask::CBTTask() : CBaseTask(), CLock()
+CBTTask::CBTTask() : CBaseTask(), CLock(true)
 {
     // Initialize class members with default values
     mManufacturerData = nullptr;
@@ -1132,6 +1132,9 @@ void CBTTask::run()
     }
 endTask:
     deinit_bt();
+#ifdef CONFIG_BLE_DATA_IBEACON_SCAN
+    mBeaconTimer.reset();
+#endif
     if (mManufacturerData != nullptr)
         vPortFree(mManufacturerData);
     while (getMessage(&msg, 0))
