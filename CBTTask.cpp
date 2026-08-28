@@ -13,6 +13,7 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "host/ble_hs_mbuf.h"
 #include "host/ble_gap.h"
+#include "host/ble_hs.h"
 
 #ifdef CONFIG_BT_NIMBLE_ENABLED
 #include "nimble/ble.h"
@@ -875,7 +876,19 @@ void CBTTask::deinit_bt()
 {
     if (mMode == EBTMode::Off)
         return;
-    nimble_port_stop();   // Stop the NimBLE port
+    // ble_hs_start() выполняется не здесь, а в задаче nimble_host, которую init_bt()
+    // создаёт последней. Пока хост не поднялся, ble_hs_stop() внутри nimble_port_stop()
+    // возвращает BLE_HS_EALREADY, событие остановки в очередь хоста не ставится и
+    // задача nimble_host остаётся жить. nimble_port_deinit() при этом удаляет из-под
+    // неё очередь событий, а следующий init_bt() поднимает ВТОРУЮ задачу nimble_host.
+    // Поэтому перед остановкой ждём (ограниченно) готовности хоста.
+    for (int i = 0; (i < 20) && (!ble_hs_is_enabled()); i++)
+        vTaskDelay(pdMS_TO_TICKS(10));
+    int rc = nimble_port_stop(); // Stop the NimBLE port
+    if (rc != 0)
+    {
+        TRACE_ERROR("nimble_port_stop failed", rc);
+    }
     nimble_port_deinit(); // Deinitialize the NimBLE port
     mOnRx = nullptr;
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
@@ -943,8 +956,8 @@ void CBTTask::run()
             {
 #ifdef CONFIG_BLE_DATA_IBEACON_TX
             case MSG_INIT_BEACON_TX:
+                mBeaconTimer.reset(); // до deinit_bt() - см. комментарий в endTask
                 deinit_bt();
-                mBeaconTimer.reset();
                 mBeaconMajor = msg.shortParam;
                 mBeaconMinor = msg.paramID;
                 init_bt(EBTMode::iBeaconTx);
@@ -1007,10 +1020,10 @@ void CBTTask::run()
                 break;
 #endif
             case MSG_INIT_DATA:
-                deinit_bt();
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
-                mBeaconTimer.reset();
+                mBeaconTimer.reset(); // до deinit_bt() - см. комментарий в endTask
 #endif
+                deinit_bt();
                 mOnRx = (onBLEDataRx *)msg.msgBody;
                 init_bt(EBTMode::Data);
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
@@ -1131,10 +1144,15 @@ void CBTTask::run()
         }
     }
 endTask:
-    deinit_bt();
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
+    // Таймер сканера гасим ДО deinit_bt(): остановка nimble при активном скане
+    // занимает заметное время, очередь задачи в это время не разгребается и
+    // забивается отчётами скана. Оставленный на этот период таймер успевает
+    // выстрелить и упереться в переполненную очередь, а сразу после выхода из
+    // run() очередь и сам объект задачи удаляются.
     mBeaconTimer.reset();
 #endif
+    deinit_bt();
     if (mManufacturerData != nullptr)
         vPortFree(mManufacturerData);
     while (getMessage(&msg, 0))
