@@ -14,6 +14,7 @@
 #include "host/ble_hs_mbuf.h"
 #include "host/ble_gap.h"
 #include "host/ble_hs.h"
+#include "esp_sleep.h"
 
 #ifdef CONFIG_BT_NIMBLE_ENABLED
 #include "nimble/ble.h"
@@ -865,6 +866,17 @@ EBTMode CBTTask::init_bt(EBTMode mode)
     // Start the BLE host task
     nimble_port_freertos_init(ble_host_task);
 
+#if CONFIG_PM_ENABLE
+    // Источник пробуждения от BT держим ровно на время жизни контроллера (парно с
+    // deinit_bt): выставленный однократно бит RTC_BT_TRIG_EN остаётся в
+    // s_config.wakeup_triggers и после выключения BT, где он бессмыслен и вдобавок
+    // ломает условие safe_pd для отключения VDDSDIO в light sleep (лишний ток).
+    // Код возврата намеренно не проверяем: на SoC без поддержки пробуждения от BT
+    // это ESP_ERR_NOT_SUPPORTED, а init_bt() в режиме сканера вызывается каждые
+    // несколько секунд - лог был бы спамом.
+    esp_sleep_enable_bt_wakeup();
+#endif
+
     mMode = mode;
     return mMode;
 }
@@ -890,6 +902,9 @@ void CBTTask::deinit_bt()
         TRACE_ERROR("nimble_port_stop failed", rc);
     }
     nimble_port_deinit(); // Deinitialize the NimBLE port
+#if CONFIG_PM_ENABLE
+    esp_sleep_disable_bt_wakeup(); // парно с init_bt, см. комментарий там
+#endif
     mOnRx = nullptr;
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     mOnRx2 = nullptr;
