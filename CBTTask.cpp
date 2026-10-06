@@ -15,6 +15,7 @@
 #include "host/ble_gap.h"
 #include "host/ble_hs.h"
 #include "esp_sleep.h"
+#include "freertos/idf_additions.h"
 
 #ifdef CONFIG_BT_NIMBLE_ENABLED
 #include "nimble/ble.h"
@@ -34,6 +35,9 @@
 #else
 #define TASK_MAX_BLOCK_TIME portMAX_DELAY
 #endif
+
+#define BT_TX_RETRY_MS (10)      ///< Period of offering the waiting main channel data to the stack.
+#define BT_TX_TIMEOUT_MS (10000) ///< The waiting data is dropped if the stack refuses it for this long.
 
 extern "C" void ble_store_config_init(void);
 
@@ -242,6 +246,11 @@ CBTTask::CBTTask() : CBaseTask(), CLock(true)
     mBeaconMajor = 0;
     mBeaconMinor = 0;
 #endif
+#ifdef CONFIG_SPIRAM
+    mTxQueue = xQueueCreateWithCaps(BTTASK_TX_LENGTH, sizeof(STaskMessage), MALLOC_CAP_SPIRAM);
+#else
+    mTxQueue = xQueueCreate(BTTASK_TX_LENGTH, sizeof(STaskMessage));
+#endif
 }
 
 /**
@@ -249,6 +258,11 @@ CBTTask::CBTTask() : CBaseTask(), CLock(true)
  */
 CBTTask::~CBTTask()
 {
+#ifdef CONFIG_SPIRAM
+    vQueueDeleteWithCaps(mTxQueue);
+#else
+    vQueueDelete(mTxQueue);
+#endif
 }
 
 /**
@@ -938,6 +952,84 @@ void CBTTask::ble_host_task(void *param)
 }
 
 /**
+ * @brief Drop the main channel data waiting for transmission
+ */
+void CBTTask::dropWaiting()
+{
+    STaskMessage msg;
+
+    while (xQueueReceive(mTxQueue, &msg, 0) == pdTRUE)
+    {
+        vPortFree(msg.msgBody);
+    }
+    mTxWait = false;
+}
+
+/**
+ * @brief Pass the main channel data to the stack
+ *
+ * The stack keeps a notification in mbufs until the controller transmits it, so a long
+ * sequence of messages exhausts the mbuf pool and the stack refuses the next one. Such a
+ * message stays in mTxQueue and is offered again: the task wakes up every BT_TX_RETRY_MS
+ * while the queue is not empty. The task does not wait for the stack here, because the
+ * mbufs are released by the NimBLE host task, which itself may be waiting for a place in
+ * the queue of this task (gatt_svr_chr_write).
+ */
+void CBTTask::sendWaiting()
+{
+    STaskMessage msg;
+    struct os_mbuf *txom;
+    int er;
+
+    while (xQueuePeek(mTxQueue, &msg, 0) == pdTRUE)
+    {
+        if (!mConnect)
+        {
+            TRACE_WARNING("BLE Tx: not connected", msg.shortParam);
+            dropWaiting();
+            return;
+        }
+
+        er = BLE_HS_ENOMEM;
+        txom = ble_hs_mbuf_from_flat(msg.msgBody, msg.shortParam);
+        if (txom != nullptr)
+        {
+            // A quarter of the pool is left to the stack: without mbufs it rejects
+            // the requests of the peer (ATT error "insufficient resources").
+            struct os_mempool *pool = txom->om_omp->omp_pool;
+            if (pool->mp_num_free > (pool->mp_num_blocks / 4))
+                er = ble_gatts_notify_custom(1, ble_spp_svc_gatt_read_val_handle, txom);
+            else
+                os_mbuf_free_chain(txom);
+        }
+
+        if (er == BLE_HS_ENOMEM)
+        {
+            // No free mbufs yet
+            if (!mTxWait)
+            {
+                mTxWait = true;
+                mTxTime = xTaskGetTickCount();
+            }
+            else if ((xTaskGetTickCount() - mTxTime) >= pdMS_TO_TICKS(BT_TX_TIMEOUT_MS))
+            {
+                TRACE_ERROR("bt: notifications dropped", (int)uxQueueMessagesWaiting(mTxQueue));
+                dropWaiting();
+            }
+            return;
+        }
+
+        if (er != 0)
+        {
+            TRACE_ERROR("bt: Error in sending notification", er);
+        }
+        mTxWait = false;
+        xQueueReceive(mTxQueue, &msg, 0);
+        vPortFree(msg.msgBody);
+    }
+}
+
+/**
  * @brief Main function for the Bluetooth task execution
  */
 void CBTTask::run()
@@ -969,16 +1061,17 @@ void CBTTask::run()
     }
 #endif
 
+#ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     struct os_mbuf *txom; // Buffer for data transmission
     int er;
-#ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     bool skip = false; // Flag to skip transmission
     int n;
 #endif
     for (;;)
     {
-        // Process incoming messages
-        while (getMessage(&msg, TASK_MAX_BLOCK_TIME))
+        // Process incoming messages. While the main channel data waits for the stack,
+        // the task wakes up by timeout to offer it again.
+        while (getMessage(&msg, (uxQueueMessagesWaiting(mTxQueue) == 0) ? TASK_MAX_BLOCK_TIME : pdMS_TO_TICKS(BT_TX_RETRY_MS)))
         {
             switch (msg.msgID)
             {
@@ -1065,20 +1158,9 @@ void CBTTask::run()
 #endif
                 break;
             case MSG_WRITE_DATA:
-                // Send data via BLE notification
-                if (mConnect)
-                {
-                    txom = ble_hs_mbuf_from_flat(msg.msgBody, msg.shortParam);
-                    if ((er = ble_gatts_notify_custom(1, ble_spp_svc_gatt_read_val_handle, txom)) != 0)
-                    {
-                        TRACE_ERROR("bt: Error in sending notification", er);
-                    }
-                }
-                else
-                {
-                    TRACE_WARNING("BLE Tx: not connected", msg.shortParam);
-                }
-                vPortFree(msg.msgBody);
+                // Send data via BLE notification: the data is in mTxQueue,
+                // the message only wakes the task up
+                sendWaiting();
                 break;
             case MSG_READ_DATA:
                 // Receive data via BLE
@@ -1170,6 +1252,7 @@ void CBTTask::run()
             }
 #endif
         }
+        sendWaiting();
     }
 endTask:
 #ifdef CONFIG_BLE_DATA_IBEACON_SCAN
@@ -1181,6 +1264,7 @@ endTask:
     mBeaconTimer.reset();
 #endif
     deinit_bt();
+    dropWaiting();
     if (mManufacturerData != nullptr)
         vPortFree(mManufacturerData);
     while (getMessage(&msg, 0))
@@ -1195,7 +1279,6 @@ endTask:
         case MSG_BEACON_DATA:
         case MSG_MAC_DATA:
 #endif
-        case MSG_WRITE_DATA:
         case MSG_READ_DATA:
         case MSG_SET_ADV_DATA:
             vPortFree(msg.msgBody);
@@ -1208,9 +1291,12 @@ endTask:
 
 /**
  * @brief Send data via BLE
+ *
+ * The data is put into mTxQueue, where it waits until the stack is able to take it.
+ *
  * @param data Pointer to data
  * @param size Data size
- * @param xTicksToWait Wait time
+ * @param xTicksToWait Wait time for a place in the transmit queue
  * @return true if successful, false if error
  */
 bool CBTTask::sendData(uint8_t *data, size_t size, TickType_t xTicksToWait)
@@ -1218,7 +1304,14 @@ bool CBTTask::sendData(uint8_t *data, size_t size, TickType_t xTicksToWait)
     STaskMessage msg;
     uint8_t *dt = allocNewMsg(&msg, MSG_WRITE_DATA, size, true);
     std::memcpy(dt, data, size);
-    return sendMessage(&msg, xTicksToWait, true);
+    if (xQueueSend(mTxQueue, &msg, xTicksToWait) != pdPASS)
+    {
+        vPortFree(dt);
+        return false;
+    }
+    // Wake the task up. If its queue is full, the task is running and will see the data anyway.
+    sendCmd(MSG_WRITE_DATA);
+    return true;
 }
 
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL

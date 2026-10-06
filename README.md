@@ -32,7 +32,7 @@ This header file (`CBTTask.h`) defines a singleton C++ class `CBTTask` designed 
 *   `getMode()`: Get the current operational mode.
 *   `setBeacon(...)`: Configure and start iBeacon transmission or scanning.
 *   `setData(...)`: Configure and start data exchange mode, setting up callbacks.
-*   `sendData(...)`: Send data via the main GATT notification/indication.
+*   `sendData(...)`: Send data via the main GATT notification/indication. The data waits in a transmit queue (`BTTASK_TX_LENGTH` messages) until the NimBLE stack has free buffers, so a long sequence of messages is delivered in order without loss; the call blocks while the queue is full. The queue is dropped on disconnect or if the stack accepts nothing for 10 s.
 *   `sendData2(...)`: Send data via the optional second GATT characteristic.
 *   `setManufacturerData(...)`: Update the data included in BLE advertisements.
 

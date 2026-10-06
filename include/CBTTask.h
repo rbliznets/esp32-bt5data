@@ -49,6 +49,7 @@
 #define BTTASK_STACKSIZE (3 * 1024) ///< Task stack size.
 #define BTTASK_PRIOR (2)			///< Task priority.
 #define BTTASK_LENGTH (30)			///< Task receive queue length.
+#define BTTASK_TX_LENGTH (64)		///< Main channel transmit queue length.
 #ifdef CONFIG_BLE_DATA_TASK0
 #define BTTASK_CPU (0) ///< CPU core number.
 #else
@@ -163,6 +164,20 @@ protected:
 	onBLEDataRx *mOnRx2 = nullptr; ///< Callback function for receiving data on the second channel.
 #endif
 	onBLEConnect *mOnConnect = nullptr; ///< Callback function for connection events.
+
+	QueueHandle_t mTxQueue = nullptr; ///< Main channel data which the stack has not taken yet.
+	bool mTxWait = false;			  ///< The stack refused the first message of mTxQueue.
+	TickType_t mTxTime = 0;			  ///< Time of the first refusal.
+
+	/// Send the main channel data.
+	/*!
+		Passes the messages of mTxQueue to the stack in order. If the stack has no free
+		buffers, the message stays in the queue until the next call.
+	*/
+	void sendWaiting();
+
+	/// Drop the main channel data.
+	void dropWaiting();
 
 	uint8_t own_addr_type; ///< BLE address type.
 
@@ -458,9 +473,13 @@ public:
 
 	/// Send data to the main channel.
 	/*!
+		The data waits in the transmit queue (BTTASK_TX_LENGTH messages) until the stack has
+		free buffers, so a long sequence of messages is not lost. The queue is cleared on
+		disconnect. Do not call with a timeout from the data callbacks: they run in the task
+		that empties the queue.
 	  \param[in] data data.
 	  \param[in] size data size.
-	  \param[in] xTicksToWait message queue timeout time.
+	  \param[in] xTicksToWait transmit queue timeout time.
 	  \return true if no error.
 	*/
 	bool sendData(uint8_t *data, size_t size, TickType_t xTicksToWait = portMAX_DELAY);
