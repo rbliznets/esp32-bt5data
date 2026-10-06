@@ -586,18 +586,27 @@ void CBTTask::ble_advertise_data()
     struct ble_hs_adv_fields adv_fields;  // Advertising data fields
     struct os_mbuf *data;                 // Buffer for advertising data
 
-    /* Set a random (NRPA) address for the instance */
+    memset(&params, 0, sizeof(params));
+
+#ifdef CONFIG_BLE_DATA_EXT_ADV_RANDOM_ADDR
+    /* Random (NRPA) address: it is generated once, so it changes on every start */
     if (CBTTask::Instance()->mAddr.type == 0)
     {
         rc = ble_hs_id_gen_rnd(1, &(CBTTask::Instance()->mAddr));
         assert(rc == 0);
     }
-
-    /* For periodic advertising, use the instance with non-connectable advertising */
-    memset(&params, 0, sizeof(params));
-
-    /* Advertise using a random address */
     params.own_addr_type = BLE_OWN_ADDR_RANDOM;
+#else
+    /* Device identity address, the same as legacy advertising uses.
+     * A device without a public address has a static random one. */
+    params.own_addr_type = CBTTask::Instance()->own_addr_type;
+    if (params.own_addr_type == BLE_OWN_ADDR_RANDOM)
+    {
+        CBTTask::Instance()->mAddr.type = BLE_ADDR_RANDOM;
+        rc = ble_hs_id_copy_addr(BLE_ADDR_RANDOM, CBTTask::Instance()->mAddr.val, NULL);
+        assert(rc == 0);
+    }
+#endif
     params.primary_phy = BLE_HCI_LE_PHY_1M;
     params.secondary_phy = BLE_HCI_LE_PHY_2M;
     params.sid = 1;
@@ -624,8 +633,12 @@ void CBTTask::ble_advertise_data()
     rc = ble_gap_ext_adv_configure(1, &params, NULL, CBTTask::ble_server_gap_event, NULL);
     assert(rc == 0);
 
-    rc = ble_gap_ext_adv_set_addr(1, &(CBTTask::Instance()->mAddr));
-    assert(rc == 0);
+    /* A random address has to be given to the instance explicitly */
+    if (params.own_addr_type == BLE_OWN_ADDR_RANDOM)
+    {
+        rc = ble_gap_ext_adv_set_addr(1, &(CBTTask::Instance()->mAddr));
+        assert(rc == 0);
+    }
 
     memset(&adv_fields, 0, sizeof(adv_fields));
 

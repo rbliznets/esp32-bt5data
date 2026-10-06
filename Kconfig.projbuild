@@ -25,6 +25,15 @@ menu "BLE Data (NimBLE)"
         help
             Speed up data stream.
 
+    config BLE_DATA_EXT_ADV_RANDOM_ADDR
+        depends on BT_NIMBLE_EXT_ADV
+        bool "Random address for extended advertising"
+        default n
+        help
+            Extended data advertising uses a random (non-resolvable private)
+            address generated on every start. Otherwise it uses the device
+            address, the same as legacy advertising.
+
     config BLE_DATA_IBEACON_SCAN
         bool "BLE scan enabled"
         default n
