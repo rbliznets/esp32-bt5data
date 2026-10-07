@@ -622,7 +622,10 @@ void CBTTask::ble_advertise_data()
     }
 #endif
     params.primary_phy = BLE_HCI_LE_PHY_1M;
-    params.secondary_phy = BLE_HCI_LE_PHY_2M;
+    /* 1M on the secondary channel too: 2M has worse sensitivity, and a weak
+     * advertiser (about -75 dBm) was reported by a PC scanner ten times less
+     * often than legacy advertisers of the same level. */
+    params.secondary_phy = BLE_HCI_LE_PHY_1M;
     params.sid = 1;
     params.connectable = 1; // Connectable advertising
 
