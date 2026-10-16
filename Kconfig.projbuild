@@ -25,6 +25,25 @@ menu "BLE Data (NimBLE)"
         help
             Speed up data stream.
 
+    config BLE_DATA_PAIRING
+        bool "Just Works pairing"
+        depends on BT_NIMBLE_SECURITY_ENABLE
+        default y
+        help
+            Offer Just Works pairing (LE Secure Connections, no MITM protection)
+            on connect and bond the client. The link is protected from passive
+            eavesdropping only. Enable BT_NIMBLE_NVS_PERSIST so that bonds survive
+            a reboot, otherwise bonded clients fail to encrypt afterwards.
+
+    config BLE_DATA_REQUIRE_ENCRYPTION
+        bool "Require encrypted link for data writes"
+        depends on BLE_DATA_PAIRING
+        default n
+        help
+            The data characteristics accept writes only over an encrypted link,
+            so clients that do not pair lose the BLE data channel. Without it
+            unencrypted clients are still served.
+
     config BLE_DATA_EXT_ADV_RANDOM_ADDR
         depends on BT_NIMBLE_EXT_ADV
         bool "Random address for extended advertising"

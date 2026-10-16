@@ -58,20 +58,28 @@ const ble_uuid16_t CBTTask::chr_uuid2 = BLE_UUID16_INIT(BLE_SVC_SPP_CHR_UUID16 +
 static uint16_t ble_spp_svc_gatt_read_val_handle2 = 0x31;
 #endif
 
+// Запись в каналы данных — только по зашифрованному каналу, если так задано в
+// конфигурации; иначе обслуживаются и клиенты без сопряжения
+#ifdef CONFIG_BLE_DATA_REQUIRE_ENCRYPTION
+#define BLE_DATA_CHR_FLAGS (BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC | BLE_GATT_CHR_F_NOTIFY)
+#else
+#define BLE_DATA_CHR_FLAGS (BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY)
+#endif
+
 // Definition of GATT service characteristics
 const struct ble_gatt_chr_def CBTTask::gatt_svr_chrs[] = {
     {
         /* SPP service support */
         .uuid = (ble_uuid_t *)&chr_uuid,
-        .access_cb = ble_svc_gatt_handler,                     // Callback for handling characteristic access
-        .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY, // Write and notify allowed
-        .val_handle = &ble_spp_svc_gatt_read_val_handle,       // Pointer to the value handle
+        .access_cb = ble_svc_gatt_handler,               // Callback for handling characteristic access
+        .flags = BLE_DATA_CHR_FLAGS,                     // Write and notify allowed
+        .val_handle = &ble_spp_svc_gatt_read_val_handle, // Pointer to the value handle
     },
 #ifdef CONFIG_BLE_DATA_SECOND_CHANNEL
     {
         .uuid = (ble_uuid_t *)&chr_uuid2,
         .access_cb = ble_svc_gatt_handler2, // Callback for second channel
-        .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_NOTIFY,
+        .flags = BLE_DATA_CHR_FLAGS,
         .val_handle = &ble_spp_svc_gatt_read_val_handle2,
     },
 #endif
@@ -568,11 +576,40 @@ int CBTTask::ble_server_gap_event(struct ble_gap_event *event, void *arg)
         {
             ESP_LOGI(TAG, "Connection established");
             CBTTask::Instance()->mConnect = true;
+#ifdef CONFIG_BLE_DATA_PAIRING
+            {
+                // Сопряжение предлагаем сами: новый клиент сопрягается по Just Works,
+                // а с привязанным канал сразу шифруется сохранённым ключом
+                int rc = ble_gap_security_initiate(event->connect.conn_handle);
+                if (rc != 0)
+                    ESP_LOGW(TAG, "security initiate failed; rc=%d", rc);
+            }
+#endif
             // Call the connection callback
             if (CBTTask::Instance()->mOnConnect != nullptr)
                 CBTTask::Instance()->mOnConnect(true);
         }
         return 0;
+
+#ifdef CONFIG_BLE_DATA_PAIRING
+    case BLE_GAP_EVENT_ENC_CHANGE:
+        // Итог сопряжения либо шифрования сохранённым ключом
+        if (event->enc_change.status == 0)
+            ESP_LOGI(TAG, "link encrypted");
+        else
+            ESP_LOGW(TAG, "link encryption failed; status=%d", event->enc_change.status);
+        return 0;
+
+    case BLE_GAP_EVENT_REPEAT_PAIRING:
+    {
+        // Клиент потерял ключи привязки (переустановка, устройство удалили в ОС) и
+        // сопрягается заново: старую привязку забываем, иначе стек ему откажет
+        struct ble_gap_conn_desc desc;
+        if (ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc) == 0)
+            ble_store_util_delete_peer(&desc.peer_id_addr);
+        return BLE_GAP_REPEAT_PAIRING_RETRY;
+    }
+#endif
 
     case BLE_GAP_EVENT_DISCONNECT:
         // Disconnection event
@@ -880,6 +917,18 @@ EBTMode CBTTask::init_bt(EBTMode mode)
 #endif
     case EBTMode::Data:
         ble_hs_cfg.sync_cb = ble_on_sync_data; // Data transmission mode
+#ifdef CONFIG_BLE_DATA_PAIRING
+        // Сопряжение Just Works: ни экрана, ни клавиатуры, кода для сверки нет.
+        // LE Secure Connections (ECDH P-256) закрывает канал от прослушивания, но
+        // не от посредника — кого пускать, решает приложение. Привязки переживают
+        // перезагрузку только с BT_NIMBLE_NVS_PERSIST
+        ble_hs_cfg.sm_io_cap = BLE_HS_IO_NO_INPUT_OUTPUT;
+        ble_hs_cfg.sm_bonding = 1;
+        ble_hs_cfg.sm_mitm = 0;
+        ble_hs_cfg.sm_sc = 1;
+        ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+        ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
+#endif
         if (gatt_svr_init() != 0)
             ESP_LOGE(TAG, "Register custom service failed");
         if (ble_svc_gap_device_name_set(CBTTask::device_name) != 0)
