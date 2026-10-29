@@ -320,22 +320,27 @@ void CBTTask::ble_scan()
     }
 
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
-    // Extended scanning parameters
-    struct ble_gap_ext_disc_params disc_params;
+    // Extended scanning parameters, the same for 1M and Coded PHY.
+    // Zeroed: disable_observer_mode = 0, otherwise reports without discoverable Flags are dropped
+    struct ble_gap_ext_disc_params disc_params = {};
     disc_params.passive = 1; // Passive scanning
 
     /* Use default values for other parameters */
     disc_params.itvl = 0;   // BLE_GAP_SCAN_ITVL_MS(600);
     disc_params.window = 0; // BLE_GAP_SCAN_ITVL_MS(300);
 
-    // Start extended scanning
+    // Start extended scanning: no time limit, filter duplicates
     rc = ble_gap_ext_disc(own_addr_type, 0, 0, 1, 0, 0,
                           &disc_params, &disc_params, ble_rx_gap_event, NULL);
-    assert(rc == 0);
+    if (rc != 0)
+    {
+        ESP_LOGE(TAG, "Error initiating extended GAP discovery procedure; rc=%d", rc);
+    }
 
 #else
-    // Standard scanning parameters
-    struct ble_gap_disc_params disc_params;
+    // Standard scanning parameters.
+    // Zeroed: disable_observer_mode = 0, otherwise reports without discoverable Flags are dropped
+    struct ble_gap_disc_params disc_params = {};
     /* Filter duplicates - do not process repeated advertisements from one device */
     disc_params.filter_duplicates = 1;
 
@@ -362,6 +367,72 @@ void CBTTask::ble_scan()
 }
 
 /**
+ * @brief Parse one advertising report
+ *
+ * With the beacon filter on, iBeacon and Eddystone-UID frames go to MSG_BEACON_DATA;
+ * any other device with a public address goes to MSG_MAC_DATA.
+ *
+ * @param data Advertising data
+ * @param length Advertising data length
+ * @param addr Advertiser address
+ * @param rssi Received signal strength
+ */
+void CBTTask::ble_rx_adv(const uint8_t *data, uint8_t length, const ble_addr_t &addr, int8_t rssi)
+{
+    struct ble_hs_adv_fields fields; // Advertising data fields
+    STaskMessage msg;
+    SBeacon *beacon; // Structure for iBeacon data
+    SMac *mac;       // Structure for MAC address
+
+    if (CBTTask::Instance()->mBeaconFilter)
+    {
+        // Parse advertising fields
+        if (ble_hs_adv_parse_fields(&fields, data, length) == 0)
+        {
+            // Eddystone-UID only: service data = UUID 0xFEAA (2) + frame type 0x00 (1) + Tx power (1)
+            // + namespace (10) + instance (6) [+ RFU (2)]. URL/TLM/EID frames carry no stable ID.
+            if (fields.uuids16_is_complete && (fields.num_uuids16 > 0) && (fields.uuids16->value == 0xFEAA) &&
+                (fields.svc_data_uuid16_len >= 20) &&
+                (fields.svc_data_uuid16[0] == 0xAA) && (fields.svc_data_uuid16[1] == 0xFE) &&
+                (fields.svc_data_uuid16[2] == 0x00))
+            {
+                // Create a message with Eddystone data
+                beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
+                std::memcpy(beacon->uuid.data(), &fields.svc_data_uuid16[4], 16);           // Namespace + Instance
+                beacon->major = fields.svc_data_uuid16[1] + fields.svc_data_uuid16[0] * 256; // 0xAAFE
+                beacon->minor = fields.svc_data_uuid16[2];                                   // Type
+                beacon->power = -((int8_t)fields.svc_data_uuid16[3]);                        // Power
+                beacon->rssi = rssi;                                                         // RSSI
+                CBTTask::Instance()->sendMessage(&msg, 10, true);                            // Send message
+                return;
+            }
+
+            // Check if the device is an iBeacon
+            if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
+            {
+                // Create a message with iBeacon data
+                beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
+                std::memcpy(beacon->uuid.data(), &fields.mfg_data[4], 16);       // Copy UUID
+                beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256; // Major
+                beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256; // Minor
+                beacon->power = fields.mfg_data[24];                             // Power
+                beacon->rssi = rssi;                                             // RSSI
+                CBTTask::Instance()->sendMessage(&msg, 10, true);                // Send message
+                return;
+            }
+        }
+    }
+    // Process public device MAC addresses
+    if (addr.type == BLE_ADDR_PUBLIC)
+    {
+        mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
+        std::memcpy(mac->mac.data(), addr.val, 6); // Copy MAC
+        mac->rssi = rssi;                          // RSSI (before sending: the receiver frees the body)
+        CBTTask::Instance()->sendMessage(&msg, 10, true);
+    }
+}
+
+/**
  * @brief GAP event handler for scanning
  * @param event GAP event
  * @param arg Additional arguments
@@ -369,12 +440,6 @@ void CBTTask::ble_scan()
  */
 int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
 {
-    struct ble_hs_adv_fields fields; // Advertising data fields
-    int rc;
-    STaskMessage msg;
-    SBeacon *beacon; // Structure for iBeacon data
-    SMac *mac;       // Structure for MAC address
-
     switch (event->type)
     {
     case BLE_GAP_EVENT_DISC_COMPLETE:
@@ -383,96 +448,18 @@ int CBTTask::ble_rx_gap_event(struct ble_gap_event *event, void *arg)
 
 #ifdef CONFIG_BT_NIMBLE_EXT_ADV
     case BLE_GAP_EVENT_EXT_DISC:
-        // Extended device discovery
-        if (event->ext_disc.legacy_event_type == BLE_HCI_ADV_RPT_EVTYPE_NONCONN_IND)
-        {
-            // Parse advertising fields
-            rc = ble_hs_adv_parse_fields(&fields, event->ext_disc.data,
-                                         event->ext_disc.length_data);
-            if (rc == 0)
-            {
-                // Check if the device is an iBeacon
-                if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
-                {
-                    // Create a message with iBeacon data
-                    beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
-                    std::memcpy(beacon->uuid, &fields.mfg_data[4], 16);              // Copy UUID
-                    beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256; // Major
-                    beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256; // Minor
-                    beacon->power = fields.mfg_data[24];                             // Power
-                    beacon->rssi = event->ext_disc.rssi;                             // RSSI
-                    CBTTask::Instance()->sendMessage(&msg, 10, true);                // Send message
-                    return 0;
-                }
-            }
-        }
-        // Process public device MAC addresses
-        if (event->ext_disc.addr.type == BLE_ADDR_PUBLIC)
-        {
-            mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
-            std::memcpy(mac->mac, event->ext_disc.addr.val, 6); // Copy MAC
-            mac->rssi = event->ext_disc.rssi; // RSSI (before sending: the receiver frees the body)
-            CBTTask::Instance()->sendMessage(&msg, 10, true);
-        }
+        // Extended device discovery: legacy and extended PDUs, 1M and Coded PHY.
+        // Chained data comes in parts and each part is reported separately: parts with
+        // "more data to come" and truncated ones are skipped. Beacons are never chained.
+        if (event->ext_disc.data_status == BLE_GAP_EXT_ADV_DATA_STATUS_COMPLETE)
+            ble_rx_adv(event->ext_disc.data, event->ext_disc.length_data, event->ext_disc.addr, event->ext_disc.rssi);
         return 0;
 #else
     case BLE_GAP_EVENT_DISC:
         // Standard device discovery
         // ESP_LOGW(TAG,"rssi %d, type %d (%d)",event->disc.rssi, event->disc.event_type,event->disc.addr.type);
         // ESP_LOG_BUFFER_HEX("mac", event->disc.addr.val, 6);
-        if (CBTTask::Instance()->mBeaconFilter)
-        {
-            // Parse advertising fields
-            rc = ble_hs_adv_parse_fields(&fields, event->disc.data,
-                                         event->disc.length_data);
-            if (rc == 0)
-            {
-                if(fields.uuids16_is_complete)
-                {
-                    // ESP_LOGI(TAG,"uuids16 0x%04X",fields.uuids16->value);
-                    // Eddystone-UID only: service data = UUID 0xFEAA (2) + frame type 0x00 (1) + Tx power (1)
-                    // + namespace (10) + instance (6) [+ RFU (2)]. URL/TLM/EID frames carry no stable ID.
-                    if ((fields.uuids16->value == 0xFEAA) && (fields.svc_data_uuid16_len >= 20) &&
-                        (fields.svc_data_uuid16[0] == 0xAA) && (fields.svc_data_uuid16[1] == 0xFE) &&
-                        (fields.svc_data_uuid16[2] == 0x00))
-                    {
-                        // ESP_LOG_BUFFER_HEX("uuid16", fields.svc_data_uuid16, fields.svc_data_uuid16_len);
-                        // Create a message with Eddystone data
-                        beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
-                        std::memcpy(beacon->uuid.data(), &fields.svc_data_uuid16[4], 16); // Namespace + Instance
-                        beacon->major = fields.svc_data_uuid16[1] + fields.svc_data_uuid16[0] * 256; 
-                        beacon->minor = fields.svc_data_uuid16[2] ; // Type
-                        beacon->power = -((int8_t)fields.svc_data_uuid16[3]);                        // Power
-                        beacon->rssi = event->disc.rssi;                                 // RSSI
-                        CBTTask::Instance()->sendMessage(&msg, 10, true);                // Send message
-                        return 0;
-                    }
-                }
-                
-                // Check if the device is an iBeacon
-                if ((fields.mfg_data_len == 25) && (fields.mfg_data[0] == 0x4c) && (fields.mfg_data[1] == 0) && (fields.mfg_data[2] == 0x02) && (fields.mfg_data[3] == 0x15))
-                {
-                    // ESP_LOG_BUFFER_HEX("mfg", fields.mfg_data, fields.mfg_data_len);
-                    // Create a message with iBeacon data
-                    beacon = (SBeacon *)allocNewMsg(&msg, MSG_BEACON_DATA, sizeof(SBeacon), true);
-                    std::memcpy(beacon->uuid.data(), &fields.mfg_data[4], 16);       // Copy UUID
-                    beacon->major = fields.mfg_data[21] + fields.mfg_data[20] * 256; // Major
-                    beacon->minor = fields.mfg_data[23] + fields.mfg_data[22] * 256; // Minor
-                    beacon->power = fields.mfg_data[24];                             // Power
-                    beacon->rssi = event->disc.rssi;                                 // RSSI
-                    CBTTask::Instance()->sendMessage(&msg, 10, true);                // Send message
-                    return 0;
-                }
-            }
-        }
-        // Process public device MAC addresses
-        if (event->disc.addr.type == BLE_ADDR_PUBLIC)
-        {
-            mac = (SMac *)allocNewMsg(&msg, MSG_MAC_DATA, sizeof(SMac), true);
-            std::memcpy(mac->mac.data(), event->disc.addr.val, 6); // Copy MAC
-            mac->rssi = event->disc.rssi; // RSSI (before sending: the receiver frees the body)
-            CBTTask::Instance()->sendMessage(&msg, 10, true);
-        }
+        ble_rx_adv(event->disc.data, event->disc.length_data, event->disc.addr, event->disc.rssi);
         return 0;
 #endif
 

@@ -261,6 +261,18 @@ protected:
 	 * @return Return code (0 on successful processing)
 	 */
 	static int ble_rx_gap_event(struct ble_gap_event *event, void *arg);
+
+	/**
+	 * @brief Parse one advertising report
+	 *
+	 * iBeacon and Eddystone-UID frames go to MSG_BEACON_DATA, public MAC addresses to MSG_MAC_DATA.
+	 *
+	 * @param[in] data Advertising data
+	 * @param[in] length Advertising data length
+	 * @param[in] addr Advertiser address
+	 * @param[in] rssi Received signal strength
+	 */
+	static void ble_rx_adv(const uint8_t *data, uint8_t length, const ble_addr_t &addr, int8_t rssi);
 #endif
 
 	uint8_t *mManufacturerData = nullptr; ///< Manufacturer data for advertising
