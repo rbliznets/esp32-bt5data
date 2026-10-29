@@ -424,13 +424,16 @@ public:
 	 * @brief Set iBeacon scanning mode
 	 *
 	 * @param[in] onBeacon Callback function for processing detected beacons
-	 * @param[in] sleep Sleep time between scans in seconds
+	 * @param[in] sleep Sleep time between scans in seconds (0..32767)
+	 * @param[in] filter Parse iBeacon/Eddystone frames (otherwise only public MAC addresses)
 	 * @return true if the command is sent successfully
 	 */
 	inline bool setBeacon(onBeaconRx *onBeacon, uint16_t sleep = 5, bool filter = true)
 	{
+		// shortParam: bits 0..14 - sleep, bit 15 - filter
+		sleep &= 0x7fff;
 		if (filter)
-			sleep |= 0x80;
+			sleep |= 0x8000;
 		return sendCmd(MSG_INIT_BEACON_RX, sleep, (uint32_t)onBeacon);
 	};
 #endif
